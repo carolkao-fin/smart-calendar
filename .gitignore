@@ -1,0 +1,11 @@
+# LINE Bot 的本機資料，含 LINE 使用者 ID，不要上傳
+store.json
+store.json.tmp
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.streamlit/secrets.toml
+.DS_Store

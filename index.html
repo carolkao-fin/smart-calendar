@@ -1,0 +1,1158 @@
+<title>排程曆 — 自動工作日規劃</title>
+
+<style>
+:root{
+  --paper:#F7F8F7;
+  --surface:#FFFFFF;
+  --surface-2:#F1F4F3;
+  --ink:#16211F;
+  --ink-2:#4A5956;
+  --ink-3:#7C8B87;
+  --line:#DDE4E2;
+  --line-strong:#C3CFCC;
+  --accent:#0F6F6C;
+  --accent-ink:#0B4F4D;
+  --accent-wash:#E2EFED;
+  --on-accent:#FFFFFF;
+  --ok:#3D7A4B;
+  --warn:#B4700E;
+  --crit:#A8362B;
+  --shadow:0 1px 2px rgba(22,33,31,.06), 0 8px 24px -16px rgba(22,33,31,.28);
+
+  --sans:"Noto Sans TC","PingFang TC","Hiragino Sans CNS","Microsoft JhengHei",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono","Roboto Mono",Consolas,"Noto Sans Mono",monospace;
+
+  --r:6px;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#0F1513;
+    --surface:#171F1D;
+    --surface-2:#1E2725;
+    --ink:#E7EEEB;
+    --ink-2:#A6B5B1;
+    --ink-3:#778783;
+    --line:#28322F;
+    --line-strong:#3A4643;
+    --accent:#4FB8B0;
+    --accent-ink:#8FD8D2;
+    --accent-wash:#15302E;
+    --on-accent:#08211F;
+    --ok:#63AE72;
+    --warn:#DCA34E;
+    --crit:#DE7565;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0F1513; --surface:#171F1D; --surface-2:#1E2725;
+  --ink:#E7EEEB; --ink-2:#A6B5B1; --ink-3:#778783;
+  --line:#28322F; --line-strong:#3A4643;
+  --accent:#4FB8B0; --accent-ink:#8FD8D2; --accent-wash:#15302E; --on-accent:#08211F;
+  --ok:#63AE72; --warn:#DCA34E; --crit:#DE7565;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.8);
+}
+:root[data-theme="light"]{
+  --paper:#F7F8F7; --surface:#FFFFFF; --surface-2:#F1F4F3;
+  --ink:#16211F; --ink-2:#4A5956; --ink-3:#7C8B87;
+  --line:#DDE4E2; --line-strong:#C3CFCC;
+  --accent:#0F6F6C; --accent-ink:#0B4F4D; --accent-wash:#E2EFED; --on-accent:#FFFFFF;
+  --ok:#3D7A4B; --warn:#B4700E; --crit:#A8362B;
+  --shadow:0 1px 2px rgba(22,33,31,.06), 0 8px 24px -16px rgba(22,33,31,.28);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:14px; line-height:1.55;
+  -webkit-font-smoothing:antialiased;
+  background-image:
+    linear-gradient(to right, color-mix(in oklab, var(--line) 45%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in oklab, var(--line) 45%, transparent) 1px, transparent 1px);
+  background-size:28px 28px;
+}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:3px}
+
+.mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+.eyebrow{
+  font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--ink-3);
+}
+
+/* ---------- app bar ---------- */
+.bar{
+  position:sticky; top:0; z-index:40;
+  display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+  padding:12px 20px;
+  background:color-mix(in oklab, var(--surface) 88%, transparent);
+  backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.brand{display:flex; align-items:baseline; gap:10px; margin-right:auto}
+.brand h1{
+  margin:0; font-size:17px; font-weight:700; letter-spacing:-.01em;
+}
+.brand .tag{font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3)}
+
+.readout{display:flex; gap:0; border:1px solid var(--line); border-radius:var(--r); overflow:hidden; background:var(--surface)}
+.readout div{padding:5px 12px; border-right:1px solid var(--line); text-align:left}
+.readout div:last-child{border-right:0}
+.readout b{display:block; font-family:var(--mono); font-size:15px; font-weight:600; line-height:1.2; font-variant-numeric:tabular-nums}
+.readout span{font-family:var(--mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3)}
+
+.btn{
+  border:1px solid var(--line-strong); background:var(--surface); color:var(--ink);
+  padding:6px 12px; border-radius:var(--r); font-size:13px;
+  transition:background .12s, border-color .12s;
+}
+.btn:hover{background:var(--surface-2); border-color:var(--accent)}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:var(--on-accent); font-weight:600}
+.btn.primary:hover{background:var(--accent-ink); border-color:var(--accent-ink); color:var(--paper)}
+.btn.ghost{border-color:transparent; background:transparent; color:var(--ink-2)}
+.btn.ghost:hover{background:var(--surface-2); color:var(--ink)}
+.btn.sm{padding:3px 8px; font-size:12px}
+
+/* ---------- shell ---------- */
+.shell{
+  display:grid; grid-template-columns:344px minmax(0,1fr); gap:18px;
+  padding:18px 20px 60px; align-items:start;
+}
+@media (max-width:1000px){ .shell{grid-template-columns:1fr} }
+
+.card{
+  background:var(--surface); border:1px solid var(--line);
+  border-radius:var(--r); box-shadow:var(--shadow);
+}
+.card + .card{margin-top:14px}
+.card > h2{
+  margin:0; padding:11px 14px; border-bottom:1px solid var(--line);
+  font-size:10px; font-family:var(--mono); letter-spacing:.14em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:600;
+  display:flex; align-items:center; gap:8px;
+}
+.card > h2 .count{margin-left:auto; color:var(--ink-2)}
+.card .body{padding:14px}
+
+/* ---------- today ---------- */
+.today-head{
+  display:flex; align-items:baseline; gap:10px; padding:14px 14px 10px;
+}
+.today-head .date{font-family:var(--mono); font-size:26px; font-weight:600; letter-spacing:-.02em; line-height:1}
+.today-head .dow{font-size:12px; color:var(--ink-2)}
+.today-head .load{margin-left:auto; font-family:var(--mono); font-size:12px; color:var(--ink-2)}
+
+.gauge{height:5px; background:var(--surface-2); margin:0 14px; border-radius:99px; overflow:hidden; position:relative}
+.gauge i{display:block; height:100%; background:var(--accent); border-radius:99px}
+.gauge.over i{background:var(--crit)}
+
+.slot{
+  display:flex; align-items:center; gap:9px; padding:9px 14px;
+  border-top:1px solid var(--line);
+}
+.slot:first-of-type{border-top:1px solid var(--line)}
+.slot .dot{width:8px; height:8px; border-radius:2px; flex:none}
+.slot .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.slot .hr{font-family:var(--mono); font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums}
+.empty{padding:20px 14px; color:var(--ink-3); font-size:13px; text-align:center}
+
+/* ---------- form ---------- */
+.field{display:flex; flex-direction:column; gap:5px; margin-bottom:11px}
+.field > label{font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3)}
+.field input, .field select{
+  width:100%; padding:7px 9px; border:1px solid var(--line-strong);
+  border-radius:var(--r); background:var(--paper);
+}
+.field input:focus, .field select:focus{border-color:var(--accent); outline:none}
+.row{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+.hint{font-size:11px; color:var(--ink-3); margin:-4px 0 10px}
+
+/* ---------- task list ---------- */
+.task{padding:11px 14px; border-top:1px solid var(--line); display:grid; gap:7px}
+.task:first-child{border-top:0}
+.task.done{opacity:.5}
+.task .top{display:flex; align-items:center; gap:8px}
+.task .dot{width:9px; height:9px; border-radius:2px; flex:none}
+.task .title{font-weight:600; flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.task.done .title{text-decoration:line-through}
+.task .meta{display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:11px; color:var(--ink-3); font-variant-numeric:tabular-nums}
+.task .acts{display:flex; gap:2px; opacity:0; transition:opacity .12s}
+.task:hover .acts, .task:focus-within .acts{opacity:1}
+@media (hover:none){ .task .acts{opacity:1} }
+.iconbtn{
+  border:0; background:transparent; color:var(--ink-3); padding:2px 5px;
+  border-radius:4px; font-size:12px; line-height:1;
+}
+.iconbtn:hover{background:var(--surface-2); color:var(--ink)}
+
+.pbar{height:4px; background:var(--surface-2); border-radius:99px; overflow:hidden}
+.pbar i{display:block; height:100%; background:var(--ink-3); border-radius:99px}
+.pbar i.full{background:var(--ok)}
+
+.chip{
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
+  padding:2px 6px; border-radius:3px; font-weight:600; white-space:nowrap;
+}
+.chip.ok{color:var(--ok); background:color-mix(in oklab, var(--ok) 13%, transparent)}
+.chip.warn{color:var(--warn); background:color-mix(in oklab, var(--warn) 15%, transparent)}
+.chip.crit{color:var(--crit); background:color-mix(in oklab, var(--crit) 14%, transparent)}
+.chip.idle{color:var(--ink-3); background:var(--surface-2)}
+
+/* ---------- alerts ---------- */
+.alerts{padding:0 20px; display:grid; gap:8px}
+.alerts:empty{display:none}
+.alert{
+  display:flex; gap:10px; align-items:flex-start;
+  padding:10px 13px; border-radius:var(--r); font-size:13px;
+  border:1px solid; background:var(--surface);
+}
+.alert.crit{border-color:color-mix(in oklab, var(--crit) 45%, var(--line)); background:color-mix(in oklab, var(--crit) 8%, var(--surface))}
+.alert.warn{border-color:color-mix(in oklab, var(--warn) 45%, var(--line)); background:color-mix(in oklab, var(--warn) 8%, var(--surface))}
+.alert b{font-weight:700}
+.alert .k{font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase; padding-top:2px; flex:none}
+.alert.crit .k{color:var(--crit)} .alert.warn .k{color:var(--warn)}
+
+/* ---------- calendar ---------- */
+.cal-head{
+  display:flex; align-items:center; gap:10px; padding:11px 14px; border-bottom:1px solid var(--line);
+}
+.cal-head .mo{font-family:var(--mono); font-size:15px; font-weight:600; letter-spacing:.02em; min-width:104px}
+.seg{display:flex; border:1px solid var(--line-strong); border-radius:var(--r); overflow:hidden; margin-left:auto}
+.seg button{border:0; background:var(--surface); padding:4px 11px; font-size:12px; color:var(--ink-2)}
+.seg button[aria-pressed="true"]{background:var(--accent); color:var(--on-accent); font-weight:600}
+
+.calwrap{overflow-x:auto}
+.grid{display:grid; grid-template-columns:repeat(7,minmax(112px,1fr)); min-width:800px}
+.grid.week5{grid-template-columns:repeat(5,minmax(150px,1fr)); min-width:760px}
+.dow-h{
+  padding:7px 9px; border-bottom:1px solid var(--line); border-right:1px solid var(--line);
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+}
+.dow-h.off{color:color-mix(in oklab, var(--ink-3) 60%, transparent)}
+.dow-h:nth-child(7n){border-right:0}
+.grid.week5 .dow-h:nth-child(7n){border-right:1px solid var(--line)}
+.grid.week5 .dow-h:nth-child(5n){border-right:0}
+
+.cell{
+  position:relative; min-height:112px; padding:6px 7px 13px;
+  border-right:1px solid var(--line); border-bottom:1px solid var(--line);
+  background:var(--surface);
+  display:flex; flex-direction:column; gap:3px;
+  --load:0;
+}
+.grid:not(.week5) .cell:nth-child(7n){border-right:0}
+.grid.week5 .cell:nth-child(5n){border-right:0}
+.cell.off{background:var(--surface-2)}
+.cell.pad{background:color-mix(in oklab, var(--surface-2) 60%, var(--paper))}
+.cell.loaded{background:color-mix(in oklab, var(--accent) calc(var(--load) * 9%), var(--surface))}
+.cell.today{box-shadow:inset 0 0 0 2px var(--accent)}
+.cell .dnum{
+  font-family:var(--mono); font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums;
+  display:flex; align-items:center; gap:5px;
+}
+.cell.pad .dnum{color:var(--ink-3); opacity:.55}
+.cell.today .dnum{color:var(--accent); font-weight:700}
+.cell .dnum .tot{margin-left:auto; font-size:10px; color:var(--ink-3)}
+.cell.over .dnum .tot{color:var(--crit); font-weight:700}
+
+.blk{
+  display:flex; align-items:center; gap:5px; padding:2px 5px;
+  border-radius:3px; font-size:11.5px; line-height:1.35;
+  background:var(--surface-2); border-left:3px solid var(--bc,var(--accent));
+  overflow:hidden;
+}
+.blk .bn{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.blk .bh{font-family:var(--mono); font-size:10px; color:var(--ink-3); font-variant-numeric:tabular-nums; flex:none}
+.due{
+  display:flex; align-items:center; gap:4px; font-size:10.5px; font-weight:600;
+  color:var(--crit); padding:1px 4px; border-radius:3px;
+  background:color-mix(in oklab, var(--crit) 11%, transparent);
+  overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+}
+.meter{
+  position:absolute; left:0; right:0; bottom:0; height:4px; background:transparent;
+}
+.meter i{display:block; height:100%; background:color-mix(in oklab, var(--accent) 70%, transparent)}
+.cell.over .meter i{background:var(--crit)}
+
+/* ---------- modal ---------- */
+dialog{
+  border:1px solid var(--line); border-radius:8px; padding:0; background:var(--surface); color:var(--ink);
+  width:min(520px, calc(100vw - 32px)); box-shadow:0 24px 60px -20px rgba(0,0,0,.45);
+}
+dialog::backdrop{background:rgba(10,20,18,.44)}
+dialog h3{margin:0; padding:13px 16px; border-bottom:1px solid var(--line); font-size:14px}
+dialog .dbody{padding:16px; max-height:66vh; overflow-y:auto}
+dialog .dfoot{padding:12px 16px; border-top:1px solid var(--line); display:flex; gap:8px; justify-content:flex-end}
+.dow-pick{display:flex; gap:5px; flex-wrap:wrap}
+.dow-pick label{
+  display:flex; align-items:center; justify-content:center; width:38px; height:32px;
+  border:1px solid var(--line-strong); border-radius:var(--r); font-size:12px; cursor:pointer;
+  font-family:var(--mono);
+}
+.dow-pick input{position:absolute; opacity:0; width:0; height:0}
+.dow-pick label:has(input:checked){background:var(--accent); color:var(--on-accent); border-color:var(--accent); font-weight:700}
+.dow-pick label:has(input:focus-visible){outline:2px solid var(--accent); outline-offset:2px}
+
+.taglist{display:flex; flex-wrap:wrap; gap:5px; margin-top:7px}
+.taglist span{
+  font-family:var(--mono); font-size:11px; padding:2px 5px 2px 7px; border-radius:3px;
+  background:var(--surface-2); display:flex; align-items:center; gap:3px;
+}
+.taglist button{border:0; background:transparent; color:var(--ink-3); padding:0 2px; font-size:13px; line-height:1}
+.taglist button:hover{color:var(--crit)}
+
+fieldset{border:1px solid var(--line); border-radius:var(--r); padding:12px; margin:0 0 14px}
+legend{font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); padding:0 6px}
+.note{font-size:12px; color:var(--ink-2); line-height:1.65}
+.note code{font-family:var(--mono); font-size:11.5px; background:var(--surface-2); padding:1px 4px; border-radius:3px}
+.status{font-family:var(--mono); font-size:11px; margin-top:8px; min-height:16px}
+.status.ok{color:var(--ok)} .status.bad{color:var(--crit)}
+
+@media (prefers-reduced-motion:reduce){
+  *{transition:none !important; animation:none !important}
+}
+</style>
+
+<header class="bar">
+  <div class="brand">
+    <h1>排程曆</h1>
+    <span class="tag">Auto Workday Planner</span>
+  </div>
+
+  <div class="readout" id="readout"></div>
+
+  <button class="btn" id="btnSettings">設定</button>
+  <button class="btn" id="btnLine">LINE 連動</button>
+  <button class="btn" id="btnExport">匯出</button>
+</header>
+
+<div class="alerts" id="alerts"></div>
+
+<div class="shell">
+  <!-- ============ LEFT ============ -->
+  <aside>
+    <section class="card">
+      <div class="today-head">
+        <span class="date mono" id="tDate">--</span>
+        <span class="dow" id="tDow"></span>
+        <span class="load mono" id="tLoad"></span>
+      </div>
+      <div class="gauge" id="tGauge"><i style="width:0"></i></div>
+      <div id="todayList"></div>
+    </section>
+
+    <section class="card">
+      <h2>新增任務</h2>
+      <div class="body">
+        <form id="addForm">
+          <div class="field">
+            <label for="fTitle">要做什麼</label>
+            <input id="fTitle" required maxlength="60" placeholder="例：文獻回顧初稿" />
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="fDue">何時要完成</label>
+              <input id="fDue" type="date" required />
+            </div>
+            <div class="field">
+              <label for="fHours">需要多久（小時）</label>
+              <input id="fHours" type="number" min="0.5" step="0.5" value="3" required />
+            </div>
+          </div>
+          <div class="row">
+            <div class="field">
+              <label for="fPrio">優先度</label>
+              <select id="fPrio">
+                <option value="2">一般</option>
+                <option value="3">高</option>
+                <option value="1">低</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="fStart">最早可開始</label>
+              <input id="fStart" type="date" />
+            </div>
+          </div>
+          <button class="btn primary" type="submit" style="width:100%">加入並重新排程</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>任務清單 <span class="count mono" id="taskCount"></span></h2>
+      <div id="taskList"></div>
+    </section>
+  </aside>
+
+  <!-- ============ RIGHT ============ -->
+  <section class="card">
+    <div class="cal-head">
+      <button class="btn sm" id="prevBtn" aria-label="上一個區間">←</button>
+      <button class="btn sm" id="nextBtn" aria-label="下一個區間">→</button>
+      <span class="mo mono" id="periodLabel"></span>
+      <button class="btn sm ghost" id="todayBtn">今天</button>
+      <div class="seg">
+        <button id="viewMonth" aria-pressed="true">月</button>
+        <button id="viewWeek" aria-pressed="false">工作週</button>
+      </div>
+    </div>
+    <div class="calwrap"><div class="grid" id="grid"></div></div>
+  </section>
+</div>
+
+<!-- ============ SETTINGS ============ -->
+<dialog id="dlgSettings">
+  <h3>排程設定</h3>
+  <div class="dbody">
+    <div class="row">
+      <div class="field">
+        <label for="sCap">每日可投入時數</label>
+        <input id="sCap" type="number" min="0.5" max="16" step="0.5" />
+      </div>
+      <div class="field">
+        <label for="sChunk">單一任務每日上限</label>
+        <input id="sChunk" type="number" min="0.5" max="16" step="0.5" />
+      </div>
+    </div>
+    <div class="field">
+      <label>工作日</label>
+      <div class="dow-pick" id="sDows"></div>
+    </div>
+    <p class="hint">預設週一到週五。取消勾選就不會排進那一天。</p>
+    <div class="row">
+      <div class="field">
+        <label for="sBuffer">提前完成緩衝（天）</label>
+        <input id="sBuffer" type="number" min="0" max="14" step="1" />
+      </div>
+      <div class="field">
+        <label for="sMode">排程策略</label>
+        <select id="sMode">
+          <option value="balanced">平均分攤</option>
+          <option value="asap">儘早做完</option>
+        </select>
+      </div>
+    </div>
+    <p class="hint">「平均分攤」把每件事拆成每天一小塊；「儘早做完」優先把最急的一次做完。</p>
+    <div class="field">
+      <label for="sHoliday">請假／不排程的日期</label>
+      <div style="display:flex; gap:8px">
+        <input id="sHoliday" type="date" />
+        <button class="btn" type="button" id="sHolidayAdd">加入</button>
+      </div>
+      <div class="taglist" id="sHolidayList"></div>
+    </div>
+  </div>
+  <div class="dfoot">
+    <button class="btn ghost" id="sReset" type="button">恢復預設</button>
+    <button class="btn primary" id="sClose" type="button">完成</button>
+  </div>
+</dialog>
+
+<!-- ============ TASK EDIT ============ -->
+<dialog id="dlgEdit">
+  <h3>編輯任務</h3>
+  <form method="dialog">
+    <div class="dbody">
+      <div class="field">
+        <label for="eTitle">名稱</label>
+        <input id="eTitle" maxlength="60" />
+      </div>
+      <div class="row">
+        <div class="field"><label for="eDue">截止日</label><input id="eDue" type="date" /></div>
+        <div class="field"><label for="eHours">預估總時數</label><input id="eHours" type="number" min="0.5" step="0.5" /></div>
+      </div>
+      <div class="row">
+        <div class="field"><label for="eDone">已完成時數</label><input id="eDone" type="number" min="0" step="0.5" /></div>
+        <div class="field">
+          <label for="ePrio">優先度</label>
+          <select id="ePrio"><option value="3">高</option><option value="2">一般</option><option value="1">低</option></select>
+        </div>
+      </div>
+      <div class="field"><label for="eStart">最早可開始</label><input id="eStart" type="date" /></div>
+    </div>
+    <div class="dfoot">
+      <button class="btn ghost" value="delete" type="submit">刪除任務</button>
+      <button class="btn" value="cancel" type="submit">取消</button>
+      <button class="btn primary" value="save" type="submit">儲存</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ LINE ============ -->
+<dialog id="dlgLine">
+  <h3>LINE 連動</h3>
+  <div class="dbody">
+    <p class="note">
+      接上自架的 LINE Bot 後，在 LINE 裡打一句 <code>報告 8/20 6h</code> 就會新增任務，這個頁面每分鐘自動抓回最新排程；改動也會推回去。
+      伺服器程式和架設步驟在 <code>line_bot.py</code> 與 <code>README.md</code>。
+    </p>
+    <fieldset style="margin-top:14px">
+      <legend>連線</legend>
+      <div class="field">
+        <label for="lUrl">伺服器網址</label>
+        <input id="lUrl" type="url" placeholder="https://your-bot.onrender.com" />
+      </div>
+      <div class="field">
+        <label for="lToken">同步密鑰</label>
+        <input id="lToken" type="password" placeholder="SYNC_TOKEN" />
+      </div>
+      <label style="display:flex; gap:7px; align-items:center; font-size:13px">
+        <input type="checkbox" id="lAuto" /> 每 60 秒自動同步
+      </label>
+      <div class="status" id="lStatus"></div>
+    </fieldset>
+    <div style="display:flex; gap:8px">
+      <button class="btn" type="button" id="lTest">測試連線</button>
+      <button class="btn" type="button" id="lPull">從伺服器拉回</button>
+      <button class="btn" type="button" id="lPush">推送到伺服器</button>
+    </div>
+    <p class="hint" style="margin-top:14px">
+      這個頁面若是透過 claude.ai 的分享連結開啟，瀏覽器的安全政策會擋掉對外連線；請把 <code>index.html</code> 存到本機或自己的網域再用連動功能。
+    </p>
+  </div>
+  <div class="dfoot"><button class="btn primary" id="lClose" type="button">完成</button></div>
+</dialog>
+
+<!-- ============ EXPORT ============ -->
+<dialog id="dlgExport">
+  <h3>匯出與備份</h3>
+  <div class="dbody">
+    <p class="note">
+      <b>行事曆檔（.ics）</b>：把排好的每一段工作變成日曆事件，可匯入 Google 日曆、Outlook、Apple 行事曆。
+      重新排程後再匯出一次即可覆蓋。
+    </p>
+    <div style="display:flex; gap:8px; margin:12px 0 20px">
+      <button class="btn primary" type="button" id="xIcs">下載 .ics</button>
+    </div>
+    <p class="note"><b>資料備份（.json）</b>：包含所有任務與設定，可在另一台電腦還原。</p>
+    <div style="display:flex; gap:8px; margin-top:12px">
+      <button class="btn" type="button" id="xJson">下載 JSON</button>
+      <button class="btn" type="button" id="xImport">匯入 JSON</button>
+      <input type="file" id="xFile" accept="application/json,.json" hidden />
+    </div>
+    <div class="status" id="xStatus"></div>
+  </div>
+  <div class="dfoot"><button class="btn primary" id="xClose" type="button">完成</button></div>
+</dialog>
+
+<script>
+(function(){
+"use strict";
+
+/* ================= constants ================= */
+const KEY = "schedcal.v1";
+const DOW_LABEL = ["日","一","二","三","四","五","六"];
+// 中間調，light / dark 兩種底色上都讀得出來
+const PALETTE = ["#1B8F8A","#C07A12","#6B70C4","#C4483A","#4E9660","#9C6B33","#3A82B8","#A8497F"];
+const DEFAULTS = {
+  dailyCapacity: 4,
+  maxChunkPerTask: 2.5,
+  workdays: [1,2,3,4,5],
+  bufferDays: 1,
+  mode: "balanced",
+  holidays: []
+};
+
+/* ================= date utils ================= */
+const pad = n => String(n).padStart(2,"0");
+const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+function parse(s){ const [y,m,d] = String(s).split("-").map(Number); return new Date(y, m-1, d); }
+function addDays(d,n){ const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate()+n); return x; }
+function today(){ const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
+const r2 = v => Math.round(v*100)/100;
+const upHalf = v => Math.ceil(v/0.5)*0.5;
+const dnHalf = v => Math.floor(v/0.5)*0.5;
+const hrs = v => (Math.round(v*10)/10).toString().replace(/\.0$/,"");
+
+/* ================= state ================= */
+let state = load();
+let view = "month";
+let cursor = today();
+let plan = {};        // 'YYYY-MM-DD' -> [{id, hours}]
+let diag = {};        // taskId -> {finish, status, remaining}
+let syncTimer = null;
+
+// 內嵌在 iframe（例如 Streamlit）或瀏覽器封鎖網站資料時，localStorage 會丟例外。
+// 這時仍可正常操作，但關掉分頁就會消失 —— 必須讓使用者知道，不能默默掉資料。
+let storageOK = true;
+try{
+  localStorage.setItem(KEY + ".probe", "1");
+  localStorage.removeItem(KEY + ".probe");
+}catch(e){ storageOK = false; }
+
+function load(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(KEY));
+    if(raw && Array.isArray(raw.tasks)){
+      return { tasks: raw.tasks, settings: Object.assign({}, DEFAULTS, raw.settings||{}), line: raw.line || {url:"",token:"",auto:false} };
+    }
+  }catch(e){ storageOK = false; }
+  return { tasks: seed(), settings: Object.assign({}, DEFAULTS), line:{url:"",token:"",auto:false} };
+}
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify(state)); }
+  catch(e){ if(storageOK){ storageOK = false; renderAlerts(); } }
+}
+function seed(){
+  const t = today();
+  return [
+    { id:uid(), title:"文獻回顧初稿", deadline:fmt(addDays(t,9)),  hours:10, doneHours:2, priority:3, start:fmt(t), done:false, color:PALETTE[0] },
+    { id:uid(), title:"問卷資料清理",  deadline:fmt(addDays(t,4)),  hours:5,  doneHours:0, priority:2, start:fmt(t), done:false, color:PALETTE[1] },
+    { id:uid(), title:"研討會簡報",    deadline:fmt(addDays(t,16)), hours:6,  doneHours:0, priority:2, start:fmt(t), done:false, color:PALETTE[2] }
+  ];
+}
+function uid(){ return Math.random().toString(36).slice(2,10); }
+const remain = t => Math.max(0, r2(t.hours - (t.doneHours||0)));
+
+/* ================= scheduler =================
+   每天挑「密度最高」的任務先做：密度 = 剩餘時數 ÷ 到期前還剩幾個工作天。
+   越接近截止、剩越多，密度越高，就越早被排進來。 */
+function schedule(){
+  const st = state.settings;
+  const t0 = today();
+  const active = state.tasks
+    .filter(t => !t.done && remain(t) > 0.01)
+    .map(t => ({ ref:t, rem: remain(t) }));
+
+  plan = {}; diag = {};
+  state.tasks.forEach(t => { diag[t.id] = { finish:null, status: t.done ? "done" : "ok", remaining: remain(t) }; });
+  if(!active.length) return;
+
+  // horizon: 最晚截止日再往後推 120 天，讓排不完的任務也有落點可算
+  let last = t0;
+  active.forEach(a => { const d = parse(a.ref.deadline); if(d > last) last = d; });
+  const end = addDays(last, 120);
+
+  // 預先算出區間內所有工作日，之後查表就好
+  const days = [];
+  for(let d = new Date(t0); d <= end; d = addDays(d,1)){
+    if(st.workdays.includes(d.getDay()) && !st.holidays.includes(fmt(d))) days.push(fmt(d));
+  }
+  if(!days.length) return;
+
+  const lastIdxOnOrBefore = s => { let i = days.length-1; while(i >= 0 && days[i] > s) i--; return i; };
+  const firstIdxOnOrAfter = s => { let i = 0; while(i < days.length && days[i] < s) i++; return i; };
+
+  active.forEach(a => {
+    const soft = fmt(addDays(parse(a.ref.deadline), -st.bufferDays));
+    a.dueIdx  = lastIdxOnOrBefore(soft);
+    a.hardIdx = lastIdxOnOrBefore(a.ref.deadline);
+    a.fromIdx = a.ref.start ? firstIdxOnOrAfter(a.ref.start) : 0;
+  });
+
+  for(let i = 0; i < days.length; i++){
+    if(!active.some(a => a.rem > 0.01)) break;
+    const key = days[i];
+    let cap = st.dailyCapacity;
+
+    const pool = active.filter(a => a.rem > 0.01 && a.fromIdx <= i);
+    pool.forEach(a => {
+      a._left = Math.max(1, a.dueIdx - i + 1);
+      a._den  = a.rem / a._left;
+    });
+    pool.sort((x,y) => y._den - x._den
+      || (x.ref.deadline < y.ref.deadline ? -1 : x.ref.deadline > y.ref.deadline ? 1 : 0)
+      || y.ref.priority - x.ref.priority);
+
+    for(const a of pool){
+      if(cap <= 0.01) break;
+      let want = st.mode === "balanced" ? Math.min(a.rem, upHalf(a._den)) : a.rem;
+      want = Math.min(want, cap, st.maxChunkPerTask);
+      want = dnHalf(want);
+      if(want < 0.5) want = Math.min(0.5, a.rem, cap);
+      if(want <= 0.01) continue;
+      (plan[key] || (plan[key] = [])).push({ id:a.ref.id, hours:r2(want) });
+      a.rem = r2(a.rem - want);
+      cap   = r2(cap - want);
+    }
+  }
+
+  // 診斷：什麼時候做完、來不來得及
+  active.forEach(a => {
+    const d = diag[a.ref.id];
+    d.remaining = a.rem;
+    if(a.rem > 0.01){ d.status = "unfit"; return; }
+    let fin = null;
+    for(const k of Object.keys(plan)) if(plan[k].some(b => b.id === a.ref.id)) if(!fin || k > fin) fin = k;
+    d.finish = fin;
+    if(!fin) d.status = "ok";
+    else if(fin > a.ref.deadline) d.status = "late";
+    else if(a.hardIdx >= 0 && fin > days[Math.max(0,a.dueIdx)]) d.status = "tight";
+    else d.status = "ok";
+  });
+}
+
+/* ================= render ================= */
+const $ = s => document.querySelector(s);
+const el = (tag, cls, txt) => { const n = document.createElement(tag); if(cls) n.className = cls; if(txt != null) n.textContent = txt; return n; };
+const taskById = id => state.tasks.find(t => t.id === id);
+
+function dayTotal(key){ return (plan[key]||[]).reduce((s,b) => s+b.hours, 0); }
+
+function renderAll(){ schedule(); renderReadout(); renderAlerts(); renderToday(); renderTasks(); renderCalendar(); }
+
+function renderReadout(){
+  const st = state.settings;
+  const open = state.tasks.filter(t => !t.done && remain(t) > 0.01);
+  const totalRem = open.reduce((s,t) => s + remain(t), 0);
+  let finish = null;
+  open.forEach(t => { const f = diag[t.id] && diag[t.id].finish; if(f && (!finish || f > finish)) finish = f; });
+  const risky = open.filter(t => ["late","unfit"].includes(diag[t.id].status)).length;
+
+  $("#readout").innerHTML = "";
+  const add = (label, val, color) => {
+    const d = el("div");
+    const b = el("b", null, val); if(color) b.style.color = color;
+    d.append(b, el("span", null, label));
+    $("#readout").append(d);
+  };
+  add("待辦", String(open.length));
+  add("剩餘時數", hrs(totalRem) + "h");
+  add("預計完工", finish ? finish.slice(5).replace("-","/") : "—");
+  add("風險", String(risky), risky ? "var(--crit)" : "");
+}
+
+function renderAlerts(){
+  const box = $("#alerts"); box.innerHTML = "";
+  const st = state.settings;
+  const mk = (kind, key, html) => {
+    const a = el("div", "alert " + kind);
+    a.append(el("span", "k", key));
+    const p = el("div"); p.innerHTML = html; a.append(p);
+    box.append(a);
+  };
+
+  if(!storageOK){
+    mk("warn", "無法存檔", "這個瀏覽器不讓本頁保存資料，任務只存在目前的分頁裡，關掉就會不見。請用「匯出 → 下載 JSON」自行備份，或改用瀏覽器直接開啟網頁版。");
+  }
+
+  state.tasks.filter(t => !t.done).forEach(t => {
+    const d = diag[t.id]; if(!d) return;
+    if(d.status === "unfit"){
+      mk("crit", "排不進", `<b>${esc(t.title)}</b> 還有 ${hrs(d.remaining)} 小時無處可放 — 你的工作日容量已經被更急的事情占滿。請延後截止日、降低預估時數，或把每日可投入時數調高。`);
+    }else if(d.status === "late"){
+      const over = Math.round((parse(d.finish) - parse(t.deadline)) / 86400000);
+      mk("crit", "會遲交", `<b>${esc(t.title)}</b> 依現在的容量要做到 <span class="mono">${d.finish}</span>，比截止日晚 ${over} 天。今天起每天需要 ${hrs(needPerDay(t))} 小時才追得上。`);
+    }
+  });
+
+  const openTotal = state.tasks.filter(t => !t.done).reduce((s,t) => s + remain(t), 0);
+  if(openTotal > 0 && !st.workdays.length){
+    mk("crit", "無工作日", "你把所有工作日都取消了，系統沒有任何一天可以安排。請到「設定」勾選至少一天。");
+  }
+}
+
+function needPerDay(t){
+  const st = state.settings;
+  let n = 0;
+  for(let d = today(); d <= parse(t.deadline); d = addDays(d,1)){
+    if(st.workdays.includes(d.getDay()) && !st.holidays.includes(fmt(d))) n++;
+  }
+  return n ? remain(t)/n : remain(t);
+}
+
+function renderToday(){
+  const t0 = today(), key = fmt(t0);
+  $("#tDate").textContent = `${t0.getMonth()+1}/${t0.getDate()}`;
+  $("#tDow").textContent = "週" + DOW_LABEL[t0.getDay()];
+
+  const blocks = plan[key] || [];
+  const total = dayTotal(key);
+  const cap = state.settings.dailyCapacity;
+  $("#tLoad").textContent = `${hrs(total)} / ${hrs(cap)} h`;
+  const g = $("#tGauge");
+  g.classList.toggle("over", total > cap + 0.01);
+  g.firstElementChild.style.width = Math.min(100, cap ? total/cap*100 : 0) + "%";
+
+  const list = $("#todayList"); list.innerHTML = "";
+  const isWork = state.settings.workdays.includes(t0.getDay()) && !state.settings.holidays.includes(key);
+  if(!blocks.length){
+    list.append(el("div","empty", isWork ? "今天沒有排定的工作。" : "今天不是工作日，好好休息。"));
+    return;
+  }
+  blocks.forEach(b => {
+    const t = taskById(b.id); if(!t) return;
+    const row = el("div","slot");
+    const dot = el("span","dot"); dot.style.background = t.color;
+    const btn = el("button","btn sm","完成 " + hrs(b.hours) + "h");
+    btn.title = "把這段時數記為已完成";
+    btn.onclick = () => { t.doneHours = r2(Math.min(t.hours, (t.doneHours||0) + b.hours)); if(remain(t) <= 0.01) t.done = true; save(); renderAll(); pushIfLinked(); };
+    row.append(dot, el("span","nm",t.title), el("span","hr",hrs(b.hours)+"h"), btn);
+    list.append(row);
+  });
+}
+
+function renderTasks(){
+  const box = $("#taskList"); box.innerHTML = "";
+  const open = state.tasks.filter(t => !t.done);
+  $("#taskCount").textContent = open.length + " / " + state.tasks.length;
+
+  if(!state.tasks.length){ box.append(el("div","empty","還沒有任務。從上方新增第一件事。")); return; }
+
+  const order = [...state.tasks].sort((a,b) =>
+    (a.done?1:0)-(b.done?1:0) || (a.deadline < b.deadline ? -1 : a.deadline > b.deadline ? 1 : 0) || b.priority-a.priority);
+
+  order.forEach(t => {
+    const d = diag[t.id] || {status:"ok"};
+    const row = el("div","task" + (t.done ? " done" : ""));
+
+    const top = el("div","top");
+    const dot = el("span","dot"); dot.style.background = t.color;
+    const chip = el("span","chip " + chipClass(d.status), chipText(d.status));
+    const acts = el("div","acts");
+    const ed = el("button","iconbtn","編輯"); ed.onclick = () => openEdit(t.id);
+    const dn = el("button","iconbtn", t.done ? "復原" : "完成");
+    dn.onclick = () => { t.done = !t.done; if(t.done) t.doneHours = t.hours; save(); renderAll(); pushIfLinked(); };
+    acts.append(dn, ed);
+    top.append(dot, el("span","title",t.title), chip, acts);
+
+    const done = t.doneHours || 0;
+    const pct = t.hours ? Math.min(100, done/t.hours*100) : 0;
+    const bar = el("div","pbar"); const fill = el("i"); fill.style.width = pct+"%";
+    if(pct >= 99.5) fill.classList.add("full"); fill.style.background = pct >= 99.5 ? "" : t.color; bar.append(fill);
+
+    const meta = el("div","meta");
+    meta.append(el("span",null,"截止 " + t.deadline.slice(5).replace("-","/")));
+    meta.append(el("span",null, hrs(done) + " / " + hrs(t.hours) + " h"));
+    if(!t.done && d.finish) meta.append(el("span",null,"完工 " + d.finish.slice(5).replace("-","/")));
+
+    row.append(top, bar, meta);
+    box.append(row);
+  });
+}
+function chipClass(s){ return s==="ok" ? "ok" : s==="tight" ? "warn" : s==="done" ? "idle" : "crit"; }
+function chipText(s){ return {ok:"從容",tight:"緊繃",late:"會遲交",unfit:"排不進",done:"已完成"}[s] || s; }
+
+function renderCalendar(){
+  const grid = $("#grid"), st = state.settings;
+  grid.innerHTML = "";
+  grid.classList.toggle("week5", view === "week");
+  const t0 = today();
+
+  let cells = [], heads;
+
+  if(view === "month"){
+    heads = [0,1,2,3,4,5,6];
+    const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
+    const startPad = first.getDay();
+    const gridStart = addDays(first, -startPad);
+    for(let i = 0; i < 42; i++){
+      const d = addDays(gridStart, i);
+      cells.push({ d, pad: d.getMonth() !== cursor.getMonth() });
+    }
+    while(cells.length > 35 && cells.slice(35).every(c => c.pad)) cells.length = 35;
+    $("#periodLabel").textContent = `${cursor.getFullYear()}／${pad(cursor.getMonth()+1)}`;
+  }else{
+    heads = [1,2,3,4,5];
+    const mon = addDays(cursor, -((cursor.getDay()+6) % 7));
+    for(let i = 0; i < 5; i++) cells.push({ d: addDays(mon,i), pad:false });
+    const end = addDays(mon,4);
+    $("#periodLabel").textContent = `${pad(mon.getMonth()+1)}/${pad(mon.getDate())} – ${pad(end.getMonth()+1)}/${pad(end.getDate())}`;
+  }
+
+  heads.forEach(w => {
+    const h = el("div","dow-h" + (st.workdays.includes(w) ? "" : " off"), "週" + DOW_LABEL[w]);
+    grid.append(h);
+  });
+
+  cells.forEach(({d,pad:isPad}) => {
+    const key = fmt(d);
+    const isWork = st.workdays.includes(d.getDay()) && !st.holidays.includes(key);
+    const blocks = plan[key] || [];
+    const total = dayTotal(key);
+    const cap = st.dailyCapacity || 1;
+    const ratio = total / cap;
+
+    const c = el("div","cell");
+    if(isPad) c.classList.add("pad");
+    else if(!isWork) c.classList.add("off");
+    else if(total > 0) c.classList.add("loaded");
+    if(total > cap + 0.01) c.classList.add("over");
+    if(key === fmt(t0)) c.classList.add("today");
+    c.style.setProperty("--load", Math.min(1, ratio).toFixed(2));
+
+    const num = el("div","dnum");
+    num.append(el("span",null,String(d.getDate())));
+    if(st.holidays.includes(key)) num.append(el("span","eyebrow","休"));
+    if(total > 0) num.append(el("span","tot", hrs(total)+"h"));
+    c.append(num);
+
+    // 截止日旗標
+    state.tasks.filter(t => !t.done && t.deadline === key).forEach(t => {
+      const f = el("div","due"); f.title = "截止：" + t.title;
+      f.append(el("span",null,"截止"), el("span",null,t.title));
+      c.append(f);
+    });
+
+    blocks.forEach(b => {
+      const t = taskById(b.id); if(!t) return;
+      const n = el("div","blk"); n.style.setProperty("--bc", t.color);
+      n.title = `${t.title} — ${hrs(b.hours)} 小時`;
+      n.append(el("span","bn",t.title), el("span","bh",hrs(b.hours)+"h"));
+      c.append(n);
+    });
+
+    if(total > 0){
+      const m = el("div","meter"); const i = el("i");
+      i.style.width = Math.min(100, ratio*100) + "%"; m.append(i); c.append(m);
+    }
+    grid.append(c);
+  });
+}
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+/* ================= interactions ================= */
+$("#addForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const title = $("#fTitle").value.trim();
+  const deadline = $("#fDue").value;
+  const hours = parseFloat($("#fHours").value);
+  if(!title || !deadline || !(hours > 0)) return;
+  state.tasks.push({
+    id: uid(), title, deadline, hours,
+    doneHours: 0,
+    priority: parseInt($("#fPrio").value,10),
+    start: $("#fStart").value || fmt(today()),
+    done: false,
+    color: PALETTE[state.tasks.length % PALETTE.length]
+  });
+  save(); renderAll(); pushIfLinked();
+  e.target.reset();
+  $("#fHours").value = 3; $("#fPrio").value = "2";
+  $("#fTitle").focus();
+});
+
+$("#prevBtn").onclick = () => { cursor = view === "month" ? new Date(cursor.getFullYear(), cursor.getMonth()-1, 1) : addDays(cursor,-7); renderCalendar(); };
+$("#nextBtn").onclick = () => { cursor = view === "month" ? new Date(cursor.getFullYear(), cursor.getMonth()+1, 1) : addDays(cursor,7); renderCalendar(); };
+$("#todayBtn").onclick = () => { cursor = today(); renderCalendar(); };
+$("#viewMonth").onclick = () => setView("month");
+$("#viewWeek").onclick  = () => setView("week");
+function setView(v){
+  view = v; cursor = today();
+  $("#viewMonth").setAttribute("aria-pressed", String(v === "month"));
+  $("#viewWeek").setAttribute("aria-pressed", String(v === "week"));
+  renderCalendar();
+}
+
+/* ---- edit ---- */
+let editing = null;
+function openEdit(id){
+  const t = taskById(id); if(!t) return;
+  editing = id;
+  $("#eTitle").value = t.title; $("#eDue").value = t.deadline;
+  $("#eHours").value = t.hours; $("#eDone").value = t.doneHours || 0;
+  $("#ePrio").value = String(t.priority); $("#eStart").value = t.start || "";
+  $("#dlgEdit").showModal();
+}
+$("#dlgEdit").addEventListener("close", () => {
+  const v = $("#dlgEdit").returnValue, t = taskById(editing);
+  if(t && v === "save"){
+    t.title = $("#eTitle").value.trim() || t.title;
+    t.deadline = $("#eDue").value || t.deadline;
+    t.hours = Math.max(0.5, parseFloat($("#eHours").value) || t.hours);
+    t.doneHours = Math.min(t.hours, Math.max(0, parseFloat($("#eDone").value) || 0));
+    t.priority = parseInt($("#ePrio").value,10);
+    t.start = $("#eStart").value || t.start;
+    t.done = remain(t) <= 0.01;
+  }else if(t && v === "delete"){
+    state.tasks = state.tasks.filter(x => x.id !== editing);
+  }
+  editing = null;
+  if(v === "save" || v === "delete"){ save(); renderAll(); pushIfLinked(); }
+});
+
+/* ---- settings ---- */
+$("#btnSettings").onclick = () => { fillSettings(); $("#dlgSettings").showModal(); };
+$("#sClose").onclick = () => $("#dlgSettings").close();
+function fillSettings(){
+  const st = state.settings;
+  $("#sCap").value = st.dailyCapacity;
+  $("#sChunk").value = st.maxChunkPerTask;
+  $("#sBuffer").value = st.bufferDays;
+  $("#sMode").value = st.mode;
+  const box = $("#sDows"); box.innerHTML = "";
+  [1,2,3,4,5,6,0].forEach(w => {
+    const lab = el("label"); const cb = el("input"); cb.type = "checkbox"; cb.checked = st.workdays.includes(w);
+    cb.onchange = () => {
+      st.workdays = cb.checked ? [...new Set([...st.workdays,w])].sort() : st.workdays.filter(x => x !== w);
+      save(); renderAll();
+    };
+    lab.append(cb, document.createTextNode(DOW_LABEL[w]));
+    box.append(lab);
+  });
+  renderHolidays();
+}
+function renderHolidays(){
+  const box = $("#sHolidayList"); box.innerHTML = "";
+  state.settings.holidays.slice().sort().forEach(h => {
+    const s = el("span",null,h);
+    const b = el("button",null,"×"); b.type = "button"; b.setAttribute("aria-label","移除 "+h);
+    b.onclick = () => { state.settings.holidays = state.settings.holidays.filter(x => x !== h); save(); renderHolidays(); renderAll(); };
+    s.append(b); box.append(s);
+  });
+}
+$("#sHolidayAdd").onclick = () => {
+  const v = $("#sHoliday").value; if(!v) return;
+  if(!state.settings.holidays.includes(v)) state.settings.holidays.push(v);
+  $("#sHoliday").value = ""; save(); renderHolidays(); renderAll();
+};
+["sCap","sChunk","sBuffer","sMode"].forEach(id => {
+  $("#"+id).addEventListener("change", () => {
+    const st = state.settings;
+    st.dailyCapacity   = Math.max(0.5, parseFloat($("#sCap").value)   || DEFAULTS.dailyCapacity);
+    st.maxChunkPerTask = Math.max(0.5, parseFloat($("#sChunk").value) || DEFAULTS.maxChunkPerTask);
+    st.bufferDays      = Math.max(0,   parseInt($("#sBuffer").value,10) || 0);
+    st.mode            = $("#sMode").value;
+    save(); renderAll();
+  });
+});
+$("#sReset").onclick = () => { state.settings = Object.assign({}, DEFAULTS, {holidays:[]}); save(); fillSettings(); renderAll(); };
+
+/* ---- export ---- */
+$("#btnExport").onclick = () => { $("#xStatus").textContent = ""; $("#dlgExport").showModal(); };
+$("#xClose").onclick = () => $("#dlgExport").close();
+
+function download(name, text, mime){
+  const blob = new Blob([text], {type: mime});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+$("#xIcs").onclick = () => {
+  const lines = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//排程曆//TW//ZH","CALSCALE:GREGORIAN","METHOD:PUBLISH","X-WR-CALNAME:排程曆"];
+  const stamp = new Date().toISOString().replace(/[-:]/g,"").split(".")[0] + "Z";
+  Object.keys(plan).sort().forEach(key => {
+    let cur = 540; // 從上午九點開始往後堆疊（分鐘）
+    const hhmm = mins => { const v = Math.min(1439, Math.round(mins)); return pad(Math.floor(v/60)) + pad(v%60) + "00"; };
+    plan[key].forEach((b,i) => {
+      const t = taskById(b.id); if(!t) return;
+      const [y,m,d] = key.split("-");
+      const s = `${y}${m}${d}T${hhmm(cur)}`;
+      cur += b.hours * 60;
+      const e = `${y}${m}${d}T${hhmm(cur)}`;
+      lines.push("BEGIN:VEVENT",
+        `UID:${t.id}-${key}-${i}@schedcal`,
+        `DTSTAMP:${stamp}`, `DTSTART:${s}`, `DTEND:${e}`,
+        `SUMMARY:${ics(t.title)} (${hrs(b.hours)}h)`,
+        `DESCRIPTION:${ics("截止 " + t.deadline + "｜總時數 " + hrs(t.hours) + "h")}`,
+        "END:VEVENT");
+    });
+  });
+  lines.push("END:VCALENDAR");
+  download("排程曆.ics", lines.join("\r\n"), "text/calendar;charset=utf-8");
+  $("#xStatus").className = "status ok"; $("#xStatus").textContent = "已下載 排程曆.ics";
+};
+function ics(s){ return String(s).replace(/([,;\\])/g,"\\$1").replace(/\n/g,"\\n"); }
+
+$("#xJson").onclick = () => {
+  download("排程曆備份.json", JSON.stringify(state,null,2), "application/json");
+  $("#xStatus").className = "status ok"; $("#xStatus").textContent = "已下載備份檔";
+};
+$("#xImport").onclick = () => $("#xFile").click();
+$("#xFile").onchange = e => {
+  const f = e.target.files[0]; if(!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try{
+      const o = JSON.parse(r.result);
+      if(!Array.isArray(o.tasks)) throw 0;
+      state.tasks = o.tasks;
+      state.settings = Object.assign({}, DEFAULTS, o.settings || {});
+      save(); renderAll();
+      $("#xStatus").className = "status ok";
+      $("#xStatus").textContent = `已匯入 ${o.tasks.length} 筆任務`;
+    }catch(err){
+      $("#xStatus").className = "status bad";
+      $("#xStatus").textContent = "讀不到任務資料，請確認選的是本工具匯出的 JSON 備份檔。";
+    }
+    e.target.value = "";
+  };
+  r.readAsText(f);
+};
+
+/* ================= LINE sync ================= */
+$("#btnLine").onclick = () => {
+  $("#lUrl").value = state.line.url || "";
+  $("#lToken").value = state.line.token || "";
+  $("#lAuto").checked = !!state.line.auto;
+  $("#lStatus").textContent = "";
+  $("#dlgLine").showModal();
+};
+$("#lClose").onclick = () => {
+  state.line = { url: $("#lUrl").value.trim().replace(/\/$/,""), token: $("#lToken").value.trim(), auto: $("#lAuto").checked };
+  save(); setupSync(); $("#dlgLine").close();
+};
+function lstat(ok, msg){ const s = $("#lStatus"); s.className = "status " + (ok ? "ok" : "bad"); s.textContent = msg; }
+
+async function api(path, opts){
+  const url = ($("#lUrl").value || state.line.url || "").trim().replace(/\/$/,"");
+  const token = ($("#lToken").value || state.line.token || "").trim();
+  if(!url) throw new Error("還沒填伺服器網址");
+  const res = await fetch(url + path, Object.assign({
+    headers: { "Content-Type": "application/json", "X-Sync-Token": token }
+  }, opts || {}));
+  if(res.status === 401) throw new Error("密鑰不對，伺服器拒絕連線");
+  if(!res.ok) throw new Error("伺服器回應 " + res.status);
+  return res.json();
+}
+
+$("#lTest").onclick = async () => {
+  try{ const j = await api("/api/ping"); lstat(true, `連線成功 — 伺服器上有 ${j.tasks} 筆任務`); }
+  catch(e){ lstat(false, "連不上：" + e.message); }
+};
+$("#lPull").onclick = async () => {
+  try{
+    const j = await api("/api/state");
+    if(Array.isArray(j.tasks)){
+      state.tasks = j.tasks.map(t => Object.assign({ doneHours:0, priority:2, done:false, color:PALETTE[0] }, t));
+      state.tasks.forEach((t,i) => { if(!t.color) t.color = PALETTE[i % PALETTE.length]; });
+      save(); renderAll(); lstat(true, `已拉回 ${j.tasks.length} 筆任務`);
+    }
+  }catch(e){ lstat(false, "拉取失敗：" + e.message); }
+};
+$("#lPush").onclick = async () => {
+  try{
+    await api("/api/state", { method:"PUT", body: JSON.stringify({ tasks: state.tasks, settings: state.settings }) });
+    lstat(true, "已推送到伺服器");
+  }catch(e){ lstat(false, "推送失敗：" + e.message); }
+};
+
+let lastSig = "";
+function pushIfLinked(){
+  if(!state.line.url || !state.line.auto) return;
+  api("/api/state", { method:"PUT", body: JSON.stringify({ tasks: state.tasks, settings: state.settings }) }).catch(() => {});
+}
+function setupSync(){
+  clearInterval(syncTimer); syncTimer = null;
+  if(!state.line.url || !state.line.auto) return;
+  syncTimer = setInterval(async () => {
+    try{
+      const j = await api("/api/state");
+      const sig = JSON.stringify(j.tasks);
+      if(sig !== lastSig && Array.isArray(j.tasks)){
+        lastSig = sig;
+        state.tasks = j.tasks.map((t,i) => Object.assign({ doneHours:0, priority:2, done:false, color:PALETTE[i % PALETTE.length] }, t));
+        save(); renderAll();
+      }
+    }catch(e){}
+  }, 60000);
+}
+
+/* ================= boot ================= */
+$("#fDue").value = fmt(addDays(today(),7));
+$("#fStart").value = fmt(today());
+setupSync();
+renderAll();
+
+// 跨分頁同步，以及過午夜自動翻頁
+window.addEventListener("storage", e => { if(e.key === KEY){ state = load(); renderAll(); } });
+let dayKey = fmt(today());
+setInterval(() => { const k = fmt(today()); if(k !== dayKey){ dayKey = k; renderAll(); } }, 60000);
+
+})();
+</script>
