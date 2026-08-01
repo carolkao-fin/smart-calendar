@@ -217,8 +217,12 @@ index.html        網頁本體，單檔、無外部相依
 streamlit_app.py  Streamlit Cloud 入口，只是把 index.html 嵌進去
 line_bot.py       LINE webhook + 同步 API + 每日推播
 requirements.txt  Streamlit / Flask 相依套件
+開發紀錄.md       開發歷程、技術決策與踩過的坑
 store.json        LINE Bot 的本機資料（執行後自動產生，已在 .gitignore）
 ```
+
+開發過程中的技術決策、遇到的問題與解法，記錄在
+[開發紀錄.md](開發紀錄.md)。
 
 `index.html` 的 `schedule()` 和 `line_bot.py` 的 `schedule()` 是同一套邏輯，
 兩邊排出來的結果一致。改動排程規則時**兩邊都要改**。
