@@ -31,6 +31,9 @@ from flask import Flask, request, jsonify, abort
 CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET", "")
 CHANNEL_TOKEN = os.environ.get("LINE_CHANNEL_TOKEN", "")
 SYNC_TOKEN = os.environ.get("SYNC_TOKEN", "")
+# 只有這些 LINE 使用者可以操作。留空的話採「先到先得」：
+# 第一個跟 Bot 說話的人成為擁有者，之後其他人一律擋掉。
+ALLOWED_USER_IDS = [s.strip() for s in os.environ.get("ALLOWED_USER_IDS", "").split(",") if s.strip()]
 STORE_PATH = os.environ.get("STORE_PATH", "store.json")
 PUSH_HOUR = int(os.environ.get("PUSH_HOUR", "8"))  # 每天幾點推播當日工作；設 -1 關閉
 PORT = int(os.environ.get("PORT", "8000"))
@@ -57,6 +60,7 @@ def load_store():
         data = {}
     data.setdefault("tasks", [])
     data.setdefault("users", [])
+    data.setdefault("owner", None)
     s = dict(DEFAULT_SETTINGS)
     s.update(data.get("settings") or {})
     data["settings"] = s
@@ -537,12 +541,12 @@ def callback():
     for ev in events:
         src = ev.get("source", {})
         uid = src.get("userId")
-        if uid:
-            with _lock:
-                store = load_store()
-                if uid not in store["users"]:
-                    store["users"].append(uid)
-                    save_store(store)
+
+        if not is_authorised(uid):
+            app.logger.warning("擋下未授權的使用者：%s", uid)
+            if ev.get("replyToken"):
+                reply(ev["replyToken"], "這是私人的排程助理，沒有開放給其他人使用。")
+            continue
 
         if ev.get("type") == "follow" and ev.get("replyToken"):
             reply(ev["replyToken"], "已連上排程曆 👋\n\n" + HELP)
@@ -551,9 +555,33 @@ def callback():
     return "OK"
 
 
+def is_authorised(uid):
+    """只有擁有者能操作 —— 任何人都加得到 LINE 官方帳號，不能讓別人讀寫你的任務。"""
+    if not uid:
+        return False
+    if ALLOWED_USER_IDS:
+        return uid in ALLOWED_USER_IDS
+    with _lock:
+        store = load_store()
+        if store["owner"] is None:                  # 先到先得：第一個說話的人就是擁有者
+            store["owner"] = uid
+            if uid not in store["users"]:
+                store["users"].append(uid)
+            save_store(store)
+            app.logger.warning(
+                "已將 %s 記為擁有者。若要鎖定，請把它設進 ALLOWED_USER_IDS 環境變數。", uid)
+            return True
+        return uid == store["owner"]
+
+
 # ----------------------------------------------------------------- 網頁同步 API
 def check_token():
-    if SYNC_TOKEN and request.headers.get("X-Sync-Token", "") != SYNC_TOKEN:
+    """沒設密鑰就直接關閉同步 API —— 不能因為忘了設定就把整份任務清單全開。"""
+    if not SYNC_TOKEN:
+        abort(503, "尚未設定 SYNC_TOKEN 環境變數，同步 API 已停用。")
+    # 轉 bytes 再比，密鑰含中文時 compare_digest 吃 str 會丟 TypeError
+    got = request.headers.get("X-Sync-Token", "").encode("utf-8")
+    if not hmac.compare_digest(got, SYNC_TOKEN.encode("utf-8")):
         abort(401)
 
 
@@ -614,14 +642,16 @@ def push_loop():
             if PUSH_HOUR >= 0 and now.hour == PUSH_HOUR and sent_on != now.date():
                 sent_on = now.date()
                 store = load_store()
-                if store["users"]:
+                # 只推給擁有者：store["users"] 可能混進別人，推過去等於外洩整份任務清單
+                targets = ALLOWED_USER_IDS or ([store["owner"]] if store["owner"] else [])
+                if targets:
                     plan, diag = schedule(store["tasks"], store["settings"])
                     msg = "早安 ☀\n" + fmt_day_plan(store, fmt(date.today()), plan, "今天")
                     risky = [t for t in store["tasks"]
                              if diag.get(t["id"], {}).get("status") in ("late", "unfit")]
                     if risky:
                         msg += "\n\n⚠ 有風險：" + "、".join(t["title"] for t in risky)
-                    for uid in store["users"]:
+                    for uid in targets:
                         push(uid, msg)
         except Exception as e:                       # 推播失敗不能弄掛伺服器
             app.logger.error("每日推播失敗：%s", e)
@@ -629,6 +659,12 @@ def push_loop():
 
 
 if __name__ == "__main__":
+    if not SYNC_TOKEN:
+        print("⚠ 未設定 SYNC_TOKEN，網頁同步 API 已停用（LINE 功能不受影響）。")
+    if not ALLOWED_USER_IDS:
+        _o = load_store()["owner"]
+        print("⚠ 未設定 ALLOWED_USER_IDS，採先到先得：%s" %
+              ("目前擁有者 " + _o if _o else "第一個跟 Bot 說話的人將成為擁有者"))
     if PUSH_HOUR >= 0:
         threading.Thread(target=push_loop, daemon=True).start()
     app.run(host="0.0.0.0", port=PORT)
