@@ -544,6 +544,11 @@ dialog .dfoot{padding:12px 16px; border-top:1px solid var(--line); display:flex;
       </div>
     </div>
     <div class="field">
+      <label for="sSlice">每件事每天至少排</label>
+      <input id="sSlice" type="number" min="0.5" max="16" step="0.5" />
+    </div>
+    <p class="hint" id="sSliceHint"></p>
+    <div class="field">
       <label>工作日</label>
       <div class="dow-pick" id="sDows"></div>
     </div>
@@ -562,8 +567,8 @@ dialog .dfoot{padding:12px 16px; border-top:1px solid var(--line); display:flex;
       </div>
     </div>
     <p class="hint">
-      「平均分攤」會先讓當天每件事都拿到 0.5 小時，其餘容量再照急迫程度分，
-      所以每天每件事都往前走一點；「儘早做完」則把最急的一件先做完再換下一件。
+      「平均分攤」讓當天的容量被幾件事分掉，每件至少拿到上面設定的那一塊；
+      「儘早做完」則把最急的一件先做完再換下一件。
     </p>
     <div class="field">
       <label for="sHoliday">請假／不排程的日期</label>
@@ -685,10 +690,11 @@ const REPEAT_LABEL = {
   biweekly:"每兩週", monthly:"每月", yearly:"每年"
 };
 const LOG_MAX = 600;          // 紀錄只留最近這麼多筆，免得 localStorage 無限長大
-const MIN_SLICE = 0.5;        // 排程的最小單位：再小的塊排出來也做不了什麼
+const MIN_SLICE = 0.5;        // 排程的最小刻度，收尾的零頭才會用到
 const DEFAULTS = {
   dailyCapacity: 4,
   maxChunkPerTask: 2.5,
+  minSlice: 2,                // 排到某天就至少給這麼多，免得切成一堆做不動的碎塊
   workdays: [1,2,3,4,5],
   bufferDays: 1,
   mode: "balanced",
@@ -971,48 +977,32 @@ function schedule(){
       || cmpStr(x.ref.deadline || "9999-99-99", y.ref.deadline || "9999-99-99")
       || y.ref.priority - x.ref.priority);
 
-    // 同一件事當天可能拿兩次（保底一小塊、之後再補），合併成一塊比較好讀
-    pool.forEach(a => { a.today = 0; });
     const give = (a, want) => {
-      if(want <= 0.01) return;             // 每日上限已經用完，這天不再給
       want = dnHalf(Math.min(want, a.rem, cap));
+      // 只有收尾的零頭會小於一塊：任務只剩一點，或當天容量只剩一點
       if(want < MIN_SLICE) want = Math.min(MIN_SLICE, a.rem, cap);
       if(want <= 0.01) return;
-      const slot = plan[key] || (plan[key] = []);
-      const prev = slot.find(b => b.id === a.ref.id && !b.fixed);
-      if(prev) prev.hours = r2(prev.hours + want);
-      else slot.push({ id:a.ref.id, hours:r2(want) });
-      a.rem   = r2(a.rem - want);
-      a.today = r2(a.today + want);
-      cap     = r2(cap - want);
+      (plan[key] || (plan[key] = [])).push({ id:a.ref.id, hours:r2(want) });
+      a.rem = r2(a.rem - want);
+      cap   = r2(cap - want);
     };
 
-    // 保底：平均分攤模式下，當天每件能做的事都先拿到最小的一塊，
-    // 這樣每天每件事都有推進，而不是密度最高的那件把整天吃光、其他人乾等。
-    // 只用掉當天一半的容量，另一半仍照密度分給最急的事 —— 否則為了雨露均霑會害人遲交。
-    if(st.mode === "balanced"){
-      const budget = dnHalf(cap / 2);
-      let used = 0;
-      for(const a of pool){
-        if(cap <= 0.01 || used + MIN_SLICE > budget + 0.01) break;
-        give(a, MIN_SLICE);
-        used = r2(used + a.today);
-      }
-    }
-
+    const slice = Math.max(MIN_SLICE, st.minSlice || DEFAULTS.minSlice);
     for(const a of pool){
       if(cap <= 0.01) break;
       let want, lim;
-      if(a._den < 0){                        // 無期限：撿剩的，每日上限照舊
-        want = a.rem; lim = st.maxChunkPerTask;
+      if(a._den < 0){                        // 無期限：撿剩的
+        want = a.rem; lim = Math.max(st.maxChunkPerTask, slice);
       }else{
-        want = st.mode === "balanced" ? Math.min(a.rem, upHalf(a._den)) : a.rem;
+        const dense = upHalf(a._den);
+        // 平均分攤：排到某一天就至少給一塊做得動的量，密度更高才給更多。
+        // 於是一天的容量會被幾件事分掉，而不是最急的那件吃光整天、其他人乾等。
+        want = st.mode === "balanced" ? Math.max(slice, dense) : a.rem;
         // 每日上限是為了不讓一件事吃掉整天，但趕不上截止日時它必須讓路，
-        // 否則會出現「明明還有容量卻告訴你會遲交」。
-        lim = Math.max(st.maxChunkPerTask, upHalf(a._den));
+        // 否則會出現「明明還有容量卻告訴你會遲交」；保底那一塊同樣不受它壓縮。
+        lim = Math.max(st.maxChunkPerTask, dense, slice);
       }
-      // 保底已經給過的要算進每日上限，否則上限會被架空
-      give(a, Math.min(want, lim - a.today));
+      give(a, Math.min(want, lim));
     }
   }
 
@@ -1564,8 +1554,10 @@ function fillSettings(){
   const st = state.settings;
   $("#sCap").value = st.dailyCapacity;
   $("#sChunk").value = st.maxChunkPerTask;
+  $("#sSlice").value = st.minSlice;
   $("#sBuffer").value = st.bufferDays;
   $("#sMode").value = st.mode;
+  syncSliceHint();
   const box = $("#sDows"); box.innerHTML = "";
   [1,2,3,4,5,6,0].forEach(w => {
     const lab = el("label"); const cb = el("input"); cb.type = "checkbox"; cb.checked = st.workdays.includes(w);
@@ -1592,14 +1584,24 @@ $("#sHolidayAdd").onclick = () => {
   if(!state.settings.holidays.includes(v)) state.settings.holidays.push(v);
   $("#sHoliday").value = ""; save(); renderHolidays(); renderAll();
 };
-["sCap","sChunk","sBuffer","sMode"].forEach(id => {
+// 一天排得下幾件事，是「每日可投入時數 ÷ 每件至少排」算出來的，直接講給使用者聽
+function syncSliceHint(){
+  const st = state.settings;
+  const n = Math.max(1, Math.floor(st.dailyCapacity / Math.max(MIN_SLICE, st.minSlice)));
+  $("#sSliceHint").textContent =
+    `排到某一天就至少給這麼多，太碎的區塊排出來也做不了什麼。`
+    + `以每日 ${hrs(st.dailyCapacity)} 小時、每件至少 ${hrs(st.minSlice)} 小時來說，一天大約排 ${n} 件。`;
+}
+["sCap","sChunk","sSlice","sBuffer","sMode"].forEach(id => {
   $("#"+id).addEventListener("change", () => {
     const st = state.settings;
     st.dailyCapacity   = Math.max(0.5, parseFloat($("#sCap").value)   || DEFAULTS.dailyCapacity);
     st.maxChunkPerTask = Math.max(0.5, parseFloat($("#sChunk").value) || DEFAULTS.maxChunkPerTask);
+    st.minSlice        = Math.max(MIN_SLICE, parseFloat($("#sSlice").value) || DEFAULTS.minSlice);
     st.bufferDays      = Math.max(0,   parseInt($("#sBuffer").value,10) || 0);
     st.mode            = $("#sMode").value;
     save(); renderAll(); syncAddUnit();   // 換算基準變了，重算表單上的提示
+    syncSliceHint();
   });
 });
 $("#sReset").onclick = () => { state.settings = Object.assign({}, DEFAULTS, {holidays:[]}); save(); fillSettings(); renderAll(); };

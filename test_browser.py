@@ -136,6 +136,11 @@ PROBE = r"""
     out.hasUnitSelect   = !!$('#fUnit');
     out.hasTimeInput    = !!$('#fAt');
     out.hasRepeatSelect = !!$('#fRepeat');
+    $('#btnSettings').click();                  // 設定值是開啟對話框時才填進去的
+    out.hasSliceSetting = !!$('#sSlice');
+    out.sliceValue      = $('#sSlice') ? $('#sSlice').value : null;
+    out.sliceHint       = $('#sSliceHint') ? $('#sSliceHint').textContent : '';
+    $('#sClose').click();
     out.repeatOptions   = $$('#fRepeat option').map(function(o){ return o.value; });
     out.dowOptions      = document.querySelectorAll('#fDows label').length;
 
@@ -257,14 +262,20 @@ def main():
           not [b for c in d['cells'] if c['col'] not in (0, 6)
                for b in c['blocks'] if b['name'] == WEEKEND])
 
-    # 平均分攤：當天每件能做的事都要先分到一塊，不是最急的那件吃光整天
+    # 平均分攤：一天的容量分給多件事，但每件都要拿到做得動的一塊（預設至少 2h）
+    SLICE = 2.0
     workdays = [c for c in d['cells'] if c['blocks'] and c['col'] not in (0, 6)]
     first = workdays[0] if workdays else None
-    check('第一個工作日就排進 3 件事', first and len(first['blocks']) >= 3,
+    check('第一個工作日就排進 2 件事以上', first and len(first['blocks']) >= 2,
           [b['name'] for b in first['blocks']] if first else None)
-    check('密度最低的任務第一天就有推進',
-          first and any(b['name'] == '每週進度回報' for b in first['blocks']),
-          [b['name'] for b in first['blocks']] if first else None)
+    check('設定裡有「每件事每天至少排」且預設 2 小時',
+          d['hasSliceSetting'] and d['sliceValue'] == '2', (d['hasSliceSetting'], d['sliceValue']))
+    # 小於一塊的只能是收尾的零頭（任務剩不到一塊，或當天容量剩不到一塊），一天最多一個
+    crumbs = [(c['col'], [b['name'] + ' ' + str(b['hours']) for b in c['blocks']
+                          if not b['fixed'] and b['hours'] < SLICE])
+              for c in d['cells'] if c['blocks']]
+    over = [x for x in crumbs if len(x[1]) > 1]
+    check('沒有把一天切成一堆碎塊（每天最多一個零頭）', not over, over)
     dup = [(c['col'], b['name']) for c in d['cells']
            for b in c['blocks']
            if [x['name'] for x in c['blocks']].count(b['name']) > 1]
