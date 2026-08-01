@@ -195,6 +195,40 @@ PROBE = r"""
     var rep3 = taskRow('每週進度回報');
     out.repeatMetaRestored = rep3 ? rep3.querySelector('.meta').textContent : '';
     out.repeatLogAfterUndo = readLog();
+    // --- LINE 連動：攔截 fetch，驗證真正上傳出去的內容（不需要真的 Worker）---
+    var captured = null;
+    window.fetch = function(url, opt){
+      try{
+        captured = {
+          url: String(url), method: opt.method,
+          token: opt.headers['x-sync-token'],
+          body: JSON.parse(opt.body)
+        };
+      }catch(err){ captured = { parseError: String(err) }; }
+      return Promise.resolve(new Response('{"ok":true}', { status:200 }));
+    };
+    click($('#btnSettings'));
+    out.hasSyncFields = !!($('#sSyncUrl') && $('#sSyncToken') && $('#sSyncNow'));
+    $('#sSyncUrl').value = 'https://example.workers.dev/';
+    $('#sSyncToken').value = 'test-token';
+    click($('#sSyncNow'));
+    click($('#sClose'));
+    if(captured && captured.body){
+      var b = captured.body;
+      out.sync = {
+        url: captured.url, method: captured.method, token: captured.token,
+        keys: Object.keys(b).sort(),
+        dayCount: Object.keys(b.days || {}).length,
+        firstDay: Object.keys(b.days || {}).sort()[0] || null,
+        firstBlock: (b.days && b.days[Object.keys(b.days).sort()[0]] || [])[0] || null,
+        taskCount: (b.tasks || []).length,
+        taskKeys: b.tasks && b.tasks[0] ? Object.keys(b.tasks[0]).sort() : [],
+        hasStatus: !!(b.tasks || []).every(function(t){ return 'status' in t; }),
+        settingsKeys: Object.keys(b.settings || {}).sort()
+      };
+    }else{
+      out.sync = captured;
+    }
   }catch(e){ out.errors.push(String(e) + ' @ ' + (e.stack || '').split('\n')[1]); }
   document.title = 'PROBE' + JSON.stringify(out) + 'ENDPROBE';
 })();
@@ -399,6 +433,30 @@ def main():
         check('打卡也能恢復',
               not [r for r in d['afterCheckinUndo']['rows'] if r['kind'] == '打卡'],
               d['afterCheckinUndo']['rows'])
+
+    print('\n=== LINE 連動（上傳的內容）===')
+    check('設定裡有 LINE 連動欄位', d.get('hasSyncFields'))
+    s = d.get('sync')
+    if not s or 'keys' not in s:
+        check('按「立即同步」會送出資料', False, s)
+    else:
+        print('  %s %s  token=%s' % (s['method'], s['url'], s['token']))
+        print('  欄位：', s['keys'])
+        print('  第一天：%s → %s' % (s['firstDay'], s['firstBlock']))
+        check('送到 /sync 且用 PUT', s['url'].endswith('/sync') and s['method'] == 'PUT', s['url'])
+        check('帶上同步密鑰', s['token'] == 'test-token', s['token'])
+        check('網址結尾多餘的斜線有處理掉', '//sync' not in s['url'].replace('https://', ''), s['url'])
+        check('內容包含行程、任務與設定',
+              set(['days', 'tasks', 'settings', 'generatedAt']) <= set(s['keys']), s['keys'])
+        check('上傳的是算好的每日區塊（含時數）',
+              s['firstBlock'] and 'title' in s['firstBlock'] and 'hours' in s['firstBlock'],
+              s['firstBlock'])
+        check('每筆任務都帶狀態（LINE 才能回報風險）', s['hasStatus'], s['taskKeys'])
+        check('任務欄位齊全',
+              set(['title', 'deadline', 'remaining', 'status', 'repeat']) <= set(s['taskKeys']),
+              s['taskKeys'])
+        check('設定一併上傳（每日可投入時數等）',
+              'dailyCapacity' in s['settingsKeys'], s['settingsKeys'])
 
     print('\n=== 摘要列 ===')
     print('  ', d['readout'])

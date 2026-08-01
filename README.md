@@ -142,11 +142,26 @@
 「匯出」可下載 `.ics` 匯入 Google 日曆／Outlook／Apple 行事曆（每段工作從上午九點起排，
 固定時段用它自己的時間），或下載 `.json` 備份全部任務與設定。
 
+**LINE 連動（選用）**
+
+想在手機上收到「今天要做什麼」，可以接一個 LINE Bot：每天早上推播今日事項，
+也能直接問它「文獻回顧還剩多久」「這禮拜最該擔心哪件事」。
+
+跑在 Cloudflare Workers 上（免費方案就夠），設定步驟見 [line-bot/README.md](line-bot/README.md)。
+**伺服器不重算排程** —— 網頁端算完把結果上傳，Worker 只負責轉述，
+不會出現兩份演算法互相走鐘的問題。
+
+不設定就不啟用，行事曆完全不連外。
+
 **隱私**
 
-沒有後端、沒有帳號、沒有追蹤，也不載入任何外部字型或分析工具。
+預設沒有後端、沒有帳號、沒有追蹤，也不載入任何外部字型或分析工具。
 任務資料只存在你這台裝置的瀏覽器裡，不會上傳到任何地方。
 換裝置或想長期保存，請用「匯出 → 下載 JSON」自行備份。
+
+唯一的例外是上面的 LINE 連動：啟用後任務名稱與截止日會送到你自己的 Cloudflare、
+LINE，以及（只有自由問答時）Anthropic。詳細流向寫在 [line-bot/README.md](line-bot/README.md)。
+另外，**JSON 備份檔會包含你填的同步密鑰**，要當作密碼保管。
 
 ---
 
@@ -179,17 +194,23 @@ repo 設定裡 **Settings → Pages → Source 選 `Deploy from a branch`、分�
 ## 檔案
 
 ```
-index.html        網頁本體，單檔、無外部相依
-streamlit_app.py  Streamlit Cloud 入口，只是把 index.html 嵌進去
-test_browser.py   以 headless Chrome 實際跑頁面並驗證排程結果
-requirements.txt  相依套件（只有 Streamlit 用得到）
-開發紀錄.md       開發歷程、技術決策與踩過的坑
+index.html            網頁本體，單檔、無外部相依
+streamlit_app.py      Streamlit Cloud 入口，只是把 index.html 嵌進去
+test_browser.py       以 headless Chrome 實際跑頁面並驗證排程結果
+requirements.txt      相依套件（只有 Streamlit 用得到）
+開發紀錄.md           開發歷程、技術決策與踩過的坑
+line-bot/             選用的 LINE 連動（Cloudflare Worker）
+  worker.js           Bot 本體：接收排程、回答問題、每日推播
+  wrangler.toml       部署設定
+  test_worker.py      不用 Node，用 headless Chrome 實際跑 worker.js
+  README.md           LINE 與 Cloudflare 的設定步驟
 ```
 
 **測試**
 
 ```
-python test_browser.py
+python test_browser.py        # 網頁（51 項）
+python line-bot/test_worker.py  # LINE Bot（40 項，不需要部署）
 ```
 
 不需要安裝套件，系統裡有 Chrome 或 Edge 即可。

@@ -580,6 +580,25 @@ dialog .dfoot{padding:12px 16px; border-top:1px solid var(--line); display:flex;
       </div>
       <div class="taglist" id="sHolidayList"></div>
     </div>
+
+    <div class="adv" style="margin-top:4px">
+      <div class="field">
+        <label for="sSyncUrl">LINE 連動 — Worker 網址</label>
+        <input id="sSyncUrl" type="url" placeholder="https://schedcal-line-bot.xxx.workers.dev" />
+      </div>
+      <div class="field">
+        <label for="sSyncToken">同步密鑰</label>
+        <input id="sSyncToken" type="password" placeholder="和 Worker 的 SYNC_TOKEN 一樣" />
+      </div>
+      <div style="display:flex; gap:8px; align-items:center">
+        <button class="btn" type="button" id="sSyncNow">立即同步</button>
+        <span class="status" id="sSyncStatus"></span>
+      </div>
+      <p class="hint" style="margin-top:9px">
+        填好之後，任務一有變動就會自動把「已經排好的行程」上傳，LINE Bot 才知道今天要做什麼。
+        留空＝不啟用，資料完全不離開這台裝置。設定方法見 <code>line-bot/README.md</code>。
+      </p>
+    </div>
   </div>
   <div class="dfoot">
     <button class="btn ghost" id="sReset" type="button">恢復預設</button>
@@ -700,7 +719,9 @@ const DEFAULTS = {
   workdays: [1,2,3,4,5],
   bufferDays: 1,
   mode: "balanced",
-  holidays: []
+  holidays: [],
+  syncUrl: "",                // 留空＝不連 LINE，資料完全不離開這台裝置
+  syncToken: ""
 };
 
 /* ================= date utils ================= */
@@ -773,6 +794,83 @@ function load(){
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(state)); }
   catch(e){ if(storageOK){ storageOK = false; renderAlerts(); } }
+  scheduleSync();
+}
+
+/* ================= LINE 連動 =================
+   只上傳「已經算好的結果」：哪一天要做哪幾件事、每件事的狀態。
+   伺服器不重算排程 —— v1～v5 兩份演算法互相走鐘的教訓（見開發紀錄挑戰 1）。 */
+let syncTimer = null, syncedAt = "";
+
+function scheduleSync(){
+  const st = state.settings;
+  if(!st.syncUrl || !st.syncToken) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => pushSnapshot(false), 4000);   // 連續改東西時只送最後一次
+}
+
+function buildSnapshot(){
+  const t0 = today(), from = fmt(t0), to = fmt(addDays(t0, 60));
+  const st = state.settings;
+
+  const days = {};
+  Object.keys(plan).forEach(k => {
+    if(k < from || k > to) return;
+    const list = plan[k].map(b => {
+      const t = taskById(b.id); if(!t) return null;
+      return { title: t.title, hours: r2(b.hours), at: b.at || "" };
+    }).filter(Boolean);
+    if(list.length) days[k] = list;
+  });
+
+  return {
+    v: 1,
+    generatedAt: new Date().toISOString(),
+    settings: {
+      dailyCapacity: st.dailyCapacity, maxChunkPerTask: st.maxChunkPerTask,
+      minSlice: st.minSlice, workdays: st.workdays,
+      bufferDays: st.bufferDays, mode: st.mode, holidays: st.holidays
+    },
+    days,
+    tasks: state.tasks.map(t => {
+      const d = diag[t.id] || {};
+      return {
+        title: t.title, deadline: t.deadline || "", at: t.at || "",
+        hours: t.hours, doneHours: r2(t.doneHours || 0),
+        remaining: d.remaining != null ? d.remaining : remain(t),
+        done: !!t.done, repeat: t.repeat || "", onlyDays: t.days || null,
+        status: d.status || "", finish: d.finish || ""
+      };
+    }),
+    recentLog: state.log.slice(0, 20).map(e => ({
+      date: e.date, title: e.title, kind: e.kind, hours: e.hours || 0
+    }))
+  };
+}
+
+async function pushSnapshot(manual){
+  const st = state.settings;
+  const url = (st.syncUrl || "").trim().replace(/\/+$/, "");
+  if(!url || !st.syncToken) return;
+  const say = (cls, msg) => { const n = $("#sSyncStatus"); if(n){ n.className = "status " + cls; n.textContent = msg; } };
+  if(manual) say("", "同步中…");
+  try{
+    const res = await fetch(url + "/sync", {
+      method: "PUT",
+      headers: { "content-type": "application/json", "x-sync-token": st.syncToken },
+      body: JSON.stringify(buildSnapshot())
+    });
+    if(!res.ok){
+      const body = await res.text().catch(() => "");
+      say("bad", `同步失敗（${res.status}）${body.slice(0,60)}`);
+      return;
+    }
+    // 這裡刻意不寫回 state：存檔會再觸發一次同步，變成無限迴圈
+    syncedAt = new Date().toLocaleTimeString();
+    say("ok", "已同步 " + syncedAt);
+  }catch(e){
+    say("bad", "連不上 Worker，請確認網址是否正確。");
+  }
 }
 function seed(){
   const t = today(), T = n => fmt(addDays(t,n));
@@ -1582,6 +1680,10 @@ function fillSettings(){
   $("#sSlice").value = st.minSlice;
   $("#sBuffer").value = st.bufferDays;
   $("#sMode").value = st.mode;
+  $("#sSyncUrl").value = st.syncUrl || "";
+  $("#sSyncToken").value = st.syncToken || "";
+  $("#sSyncStatus").textContent = syncedAt ? "上次同步 " + syncedAt : "";
+  $("#sSyncStatus").className = "status";
   syncSliceHint();
   const box = $("#sDows"); box.innerHTML = "";
   [1,2,3,4,5,6,0].forEach(w => {
@@ -1629,7 +1731,30 @@ function syncSliceHint(){
     syncSliceHint();
   });
 });
-$("#sReset").onclick = () => { state.settings = Object.assign({}, DEFAULTS, {holidays:[]}); save(); fillSettings(); renderAll(); };
+["sSyncUrl","sSyncToken"].forEach(id => {
+  $("#"+id).addEventListener("change", () => {
+    state.settings.syncUrl   = $("#sSyncUrl").value.trim();
+    state.settings.syncToken = $("#sSyncToken").value.trim();
+    save();
+  });
+});
+$("#sSyncNow").onclick = () => {
+  state.settings.syncUrl   = $("#sSyncUrl").value.trim();
+  state.settings.syncToken = $("#sSyncToken").value.trim();
+  if(!state.settings.syncUrl || !state.settings.syncToken){
+    $("#sSyncStatus").className = "status bad";
+    $("#sSyncStatus").textContent = "網址和密鑰都要填。";
+    return;
+  }
+  save(); pushSnapshot(true);
+};
+
+// 恢復預設不該把 LINE 連動一起清掉 —— 那是設定，不是排程參數
+$("#sReset").onclick = () => {
+  const { syncUrl, syncToken } = state.settings;
+  state.settings = Object.assign({}, DEFAULTS, { holidays:[], syncUrl, syncToken });
+  save(); fillSettings(); renderAll();
+};
 
 /* ---- export ---- */
 $("#btnExport").onclick = () => { $("#xStatus").textContent = ""; $("#dlgExport").showModal(); };
@@ -1706,6 +1831,7 @@ $("#fStart").value = fmt(today());
 syncAddUnit();
 syncRepeatHint();
 renderAll();
+scheduleSync();      // 開頁就把最新排程送上去，LINE 那邊才不會拿到過期資料
 
 // 跨分頁同步，以及過午夜自動翻頁
 window.addEventListener("storage", e => { if(e.key === KEY){ state = load(); renderAll(); } });

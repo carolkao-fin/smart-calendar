@@ -1,0 +1,21 @@
+name = "schedcal-line-bot"
+main = "worker.js"
+compatibility_date = "2026-08-01"
+
+# 每天台北時間 07:00 推播今日事項（cron 走 UTC，台北 = UTC+8）
+[triggers]
+crons = ["0 23 * * *"]
+
+# 用 wrangler 部署前，先建一個 KV namespace 再把 id 填進來：
+#   npx wrangler kv namespace create CAL
+[[kv_namespaces]]
+binding = "CAL"
+id = "把 wrangler 給你的 id 貼在這裡"
+
+# 密鑰不要寫在這個檔案裡。用指令設定，或在 Cloudflare 後台的
+# Settings → Variables and Secrets 新增：
+#   npx wrangler secret put LINE_CHANNEL_SECRET
+#   npx wrangler secret put LINE_ACCESS_TOKEN
+#   npx wrangler secret put LINE_OWNER_ID
+#   npx wrangler secret put SYNC_TOKEN
+#   npx wrangler secret put ANTHROPIC_API_KEY
