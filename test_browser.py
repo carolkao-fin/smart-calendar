@@ -150,6 +150,20 @@ PROBE = r"""
     if(slotBtn){
       out.slotLabel = slotBtn.textContent;
       slotBtn.click();
+      // 打卡後，今日面板本身要留下可以就地恢復的那一列
+      out.todayAfter = $$('#todayList .slot').map(function(s){
+        return { name:s.querySelector('.nm').textContent, did:s.classList.contains('did'),
+                 btn:s.querySelector('button') ? s.querySelector('button').textContent : null };
+      });
+      out.todayHead = $$('#todayList .grp').map(function(g){ return g.textContent; });
+      var undoHere = $$('#todayList .slot.did button')[0];
+      if(undoHere) undoHere.click();
+      out.todayRestored = $$('#todayList .slot').map(function(s){
+        return { name:s.querySelector('.nm').textContent, did:s.classList.contains('did'),
+                 btn:s.querySelector('button') ? s.querySelector('button').textContent : null };
+      });
+      slotBtn = $('#todayList .slot button');   // 恢復後重新打卡，繼續驗證紀錄頁
+      if(slotBtn) slotBtn.click();
       click($('#viewLog'));
       out.afterCheckin = readLog();
       out.afterCheckinTasks = readTasks();
@@ -365,6 +379,18 @@ def main():
         print('  （今天沒有排定工作，略過打卡測試）')
     else:
         print('  按鈕：', d['slotLabel'])
+        print('  打卡後今日面板：', d['todayHead'], [s['name'] + ('(已完成)' if s['did'] else '')
+                                                     for s in d['todayAfter']])
+        check('打卡後今日面板留下已完成那一列',
+              any(s['did'] for s in d['todayAfter']), d['todayAfter'])
+        check('今日面板有「今天完成」小標與時數',
+              any('今天完成' in h for h in d['todayHead']), d['todayHead'])
+        check('那一列可以就地恢復',
+              any(s['did'] and s['btn'] == '恢復' for s in d['todayAfter']), d['todayAfter'])
+        check('就地恢復後回到可打卡的狀態',
+              d['todayRestored'] and not any(s['did'] for s in d['todayRestored'])
+              and any(s['btn'] and s['btn'].startswith('完成') for s in d['todayRestored']),
+              d['todayRestored'])
         ci = [r for r in d['afterCheckin']['rows'] if r['kind'] == '打卡']
         check('打卡會留下一筆紀錄與時數', ci and ci[0]['hours'] > 0, d['afterCheckin']['rows'])
         check('打卡的時數算進今日完成',

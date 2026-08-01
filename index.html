@@ -158,6 +158,8 @@ button{cursor:pointer}
 .slot .dot{width:8px; height:8px; border-radius:2px; flex:none}
 .slot .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .slot .hr{font-family:var(--mono); font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums}
+.slot.did .nm{color:var(--ink-3); text-decoration:line-through}
+.slot.did .dot{opacity:.5}
 .empty{padding:20px 14px; color:var(--ink-3); font-size:13px; text-align:center}
 
 /* ---------- form ---------- */
@@ -1126,9 +1128,12 @@ function renderToday(){
 
   const list = $("#todayList"); list.innerHTML = "";
   const isWork = state.settings.workdays.includes(t0.getDay()) && !state.settings.holidays.includes(key);
+  const did = state.log.filter(e => e.date === key);
+
   if(!blocks.length){
-    list.append(el("div","empty", isWork ? "今天沒有排定的工作。" : "今天不是工作日，好好休息。"));
-    return;
+    list.append(el("div","empty",
+      did.length ? "今天排定的都做完了。" :
+      isWork ? "今天沒有排定的工作。" : "今天不是工作日，好好休息。"));
   }
   blocks.forEach(b => {
     const t = taskById(b.id); if(!t) return;
@@ -1140,6 +1145,26 @@ function renderToday(){
     row.append(dot);
     if(b.at){ const a = el("span","hr",b.at); a.style.fontWeight = "700"; a.style.color = t.color; row.append(a); }
     row.append(el("span","nm",t.title), el("span","hr",hrs(b.hours)+"h"), btn);
+    list.append(row);
+  });
+
+  // 今天做掉的就留在同一張卡片上，按錯了當場就能收回，不必先切到完成紀錄頁
+  if(!did.length) return;
+  const head = el("div","grp");
+  head.append(el("span",null,"今天完成"),
+              el("b",null, hrs(did.reduce((s,e) => s + (e.hours || 0), 0)) + "h"));
+  list.append(head);
+  did.forEach(e => {
+    const t = taskById(e.taskId);
+    const row = el("div","slot did");
+    const dot = el("span","dot"); dot.style.background = t ? t.color : "var(--ink-3)";
+    const un = el("button","btn sm", t ? "恢復" : "刪除紀錄");
+    un.title = t ? "還原成打卡前的狀態" : "這個任務已被刪除，只能移除紀錄";
+    un.onclick = () => undoLog(e.id);
+    row.append(dot, el("span","nm", e.title));
+    if(e.kind === "done") row.append(el("span","chip ok","完成"));
+    if(e.hours > 0) row.append(el("span","hr", hrs(e.hours) + "h"));
+    row.append(un);
     list.append(row);
   });
 }
