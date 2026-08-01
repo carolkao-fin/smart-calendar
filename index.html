@@ -556,12 +556,15 @@ dialog .dfoot{padding:12px 16px; border-top:1px solid var(--line); display:flex;
       <div class="field">
         <label for="sMode">排程策略</label>
         <select id="sMode">
-          <option value="balanced">平均分攤</option>
+          <option value="balanced">平均分攤（每天都推進）</option>
           <option value="asap">儘早做完</option>
         </select>
       </div>
     </div>
-    <p class="hint">「平均分攤」把每件事拆成每天一小塊；「儘早做完」優先把最急的一次做完。</p>
+    <p class="hint">
+      「平均分攤」會先讓當天每件事都拿到 0.5 小時，其餘容量再照急迫程度分，
+      所以每天每件事都往前走一點；「儘早做完」則把最急的一件先做完再換下一件。
+    </p>
     <div class="field">
       <label for="sHoliday">請假／不排程的日期</label>
       <div style="display:flex; gap:8px">
@@ -682,6 +685,7 @@ const REPEAT_LABEL = {
   biweekly:"每兩週", monthly:"每月", yearly:"每年"
 };
 const LOG_MAX = 600;          // 紀錄只留最近這麼多筆，免得 localStorage 無限長大
+const MIN_SLICE = 0.5;        // 排程的最小單位：再小的塊排出來也做不了什麼
 const DEFAULTS = {
   dailyCapacity: 4,
   maxChunkPerTask: 2.5,
@@ -967,6 +971,35 @@ function schedule(){
       || cmpStr(x.ref.deadline || "9999-99-99", y.ref.deadline || "9999-99-99")
       || y.ref.priority - x.ref.priority);
 
+    // 同一件事當天可能拿兩次（保底一小塊、之後再補），合併成一塊比較好讀
+    pool.forEach(a => { a.today = 0; });
+    const give = (a, want) => {
+      if(want <= 0.01) return;             // 每日上限已經用完，這天不再給
+      want = dnHalf(Math.min(want, a.rem, cap));
+      if(want < MIN_SLICE) want = Math.min(MIN_SLICE, a.rem, cap);
+      if(want <= 0.01) return;
+      const slot = plan[key] || (plan[key] = []);
+      const prev = slot.find(b => b.id === a.ref.id && !b.fixed);
+      if(prev) prev.hours = r2(prev.hours + want);
+      else slot.push({ id:a.ref.id, hours:r2(want) });
+      a.rem   = r2(a.rem - want);
+      a.today = r2(a.today + want);
+      cap     = r2(cap - want);
+    };
+
+    // 保底：平均分攤模式下，當天每件能做的事都先拿到最小的一塊，
+    // 這樣每天每件事都有推進，而不是密度最高的那件把整天吃光、其他人乾等。
+    // 只用掉當天一半的容量，另一半仍照密度分給最急的事 —— 否則為了雨露均霑會害人遲交。
+    if(st.mode === "balanced"){
+      const budget = dnHalf(cap / 2);
+      let used = 0;
+      for(const a of pool){
+        if(cap <= 0.01 || used + MIN_SLICE > budget + 0.01) break;
+        give(a, MIN_SLICE);
+        used = r2(used + a.today);
+      }
+    }
+
     for(const a of pool){
       if(cap <= 0.01) break;
       let want, lim;
@@ -978,13 +1011,8 @@ function schedule(){
         // 否則會出現「明明還有容量卻告訴你會遲交」。
         lim = Math.max(st.maxChunkPerTask, upHalf(a._den));
       }
-      want = Math.min(want, cap, lim);
-      want = dnHalf(want);
-      if(want < 0.5) want = Math.min(0.5, a.rem, cap);
-      if(want <= 0.01) continue;
-      (plan[key] || (plan[key] = [])).push({ id:a.ref.id, hours:r2(want) });
-      a.rem = r2(a.rem - want);
-      cap   = r2(cap - want);
+      // 保底已經給過的要算進每日上限，否則上限會被架空
+      give(a, Math.min(want, lim - a.today));
     }
   }
 

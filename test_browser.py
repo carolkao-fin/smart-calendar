@@ -257,6 +257,19 @@ def main():
           not [b for c in d['cells'] if c['col'] not in (0, 6)
                for b in c['blocks'] if b['name'] == WEEKEND])
 
+    # 平均分攤：當天每件能做的事都要先分到一塊，不是最急的那件吃光整天
+    workdays = [c for c in d['cells'] if c['blocks'] and c['col'] not in (0, 6)]
+    first = workdays[0] if workdays else None
+    check('第一個工作日就排進 3 件事', first and len(first['blocks']) >= 3,
+          [b['name'] for b in first['blocks']] if first else None)
+    check('密度最低的任務第一天就有推進',
+          first and any(b['name'] == '每週進度回報' for b in first['blocks']),
+          [b['name'] for b in first['blocks']] if first else None)
+    dup = [(c['col'], b['name']) for c in d['cells']
+           for b in c['blocks']
+           if [x['name'] for x in c['blocks']].count(b['name']) > 1]
+    check('同一天同一件事只會出現一塊', not dup, dup)
+
     fx = [b for c in d['cells'] for b in c['blocks'] if b['fixed']]
     check('固定時段有渲染且帶時間', len(fx) == 1 and fx[0]['at'] == '14:00', fx)
     check('固定時段沒有被拆開', len(fx) == 1 and fx[0]['hours'] == 1, fx)
