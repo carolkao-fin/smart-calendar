@@ -256,17 +256,36 @@ def parse_date_token(tok, today_=None):
     return None
 
 
-def parse_hours_token(tok):
-    m = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(h|hr|hrs|小時|時|鐘頭)?", tok, re.I)
+def unit_hours(unit, st):
+    """1 天 = 每日可投入時數；1 週 = 工作日天數 × 每日可投入時數。"""
+    cap = float(st["dailyCapacity"]) or 1.0
+    if unit == "d":
+        return cap
+    if unit == "w":
+        return cap * (len(st["workdays"]) or 5)
+    return 1.0
+
+
+# 「日」故意不收：「20日」會跟日期寫法撞在一起，寧可只認「天」。
+_DUR = re.compile(r"(\d+(?:\.\d+)?)\s*(h|hr|hrs|小時|時|鐘頭|天|工作天|週|周|禮拜|星期)?\Z", re.I)
+_UNIT_OF = {"天": "d", "工作天": "d", "週": "w", "周": "w", "禮拜": "w", "星期": "w"}
+
+
+def parse_hours_token(tok, st=None):
+    """把『6h』『2天』『1週』換算成小時。認不出來回 None。"""
+    m = _DUR.match(tok.strip())
     if not m:
         return None
-    if not m.group(2) and "." not in m.group(1) and len(m.group(1)) > 2:
+    word = m.group(2)
+    if not word and "." not in m.group(1) and len(m.group(1)) > 2:
         return None                     # 像 2026 這種純數字不當作時數
-    return float(m.group(1))
+    unit = _UNIT_OF.get(word, "h")
+    st = st or DEFAULT_SETTINGS
+    return round(float(m.group(1)) * unit_hours(unit, st), 2)
 
 
-def parse_new_task(text):
-    """把『文獻回顧 8/20 6h』拆成 (名稱, 截止日, 時數)。缺任一項回 None。"""
+def parse_new_task(text, st=None):
+    """把『文獻回顧 8/20 6h』或『文獻回顧 8/20 2天』拆成 (名稱, 截止日, 時數)。"""
     parts = text.split()
     if len(parts) < 2:
         return None
@@ -276,8 +295,8 @@ def parse_new_task(text):
         if d is None and parse_date_token(p):
             d = parse_date_token(p)
             continue
-        if h is None and parse_hours_token(p) is not None:
-            h = parse_hours_token(p)
+        if h is None and parse_hours_token(p, st) is not None:
+            h = parse_hours_token(p, st)
             continue
         name_parts.append(p)
     name = " ".join(name_parts).strip()
@@ -305,6 +324,7 @@ HELP = """排程曆 · 可以這樣跟我說
 
 新增　文獻回顧 8/20 6h
 　　　（名稱＋何時完成＋要多久，順序隨意）
+　　　時間可用 6h／2天／1週
 　　　日期也吃「明天」「下週五」「+10」
 
 今天　今天要做什麼
@@ -424,8 +444,8 @@ def handle_text(text):
             body = rest
             h = None
             parts = body.split()
-            if parts and parse_hours_token(parts[-1]) is not None:
-                h = parse_hours_token(parts[-1])
+            if parts and parse_hours_token(parts[-1], st) is not None:
+                h = parse_hours_token(parts[-1], st)
                 body = " ".join(parts[:-1])
             t = find_task(store["tasks"], body)
             if not t:
@@ -483,7 +503,7 @@ def handle_text(text):
 
         # 其餘一律當成新增任務
         body = rest if cmd in ("新增", "加", "add") else text
-        parsed = parse_new_task(body)
+        parsed = parse_new_task(body, st)
         if not parsed:
             return "看不懂「%s」。\n\n%s" % (text, HELP)
         name, due, h = parsed
