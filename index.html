@@ -229,6 +229,8 @@ button{cursor:pointer}
 .task .meta{display:flex; align-items:center; gap:10px; font-family:var(--mono); font-size:11px; color:var(--ink-3); font-variant-numeric:tabular-nums}
 .task .acts{display:flex; gap:2px; opacity:0; transition:opacity .12s}
 .task:hover .acts, .task:focus-within .acts{opacity:1}
+/* 已完成的那幾筆固定露出動作鍵，勾錯了才找得到「恢復」 */
+.task.done .acts{opacity:1}
 @media (hover:none){ .task .acts{opacity:1} }
 .iconbtn{
   border:0; background:transparent; color:var(--ink-3); padding:2px 5px;
@@ -331,6 +333,39 @@ button{cursor:pointer}
 }
 .meter i{display:block; height:100%; background:color-mix(in oklab, var(--accent) 70%, transparent)}
 .cell.over .meter i{background:var(--crit)}
+
+/* 未來的重複次數：只是預告，還沒排時數，所以用虛線和淡色和實際區塊區隔 */
+.rep{
+  display:flex; align-items:center; gap:4px; font-size:10.5px; color:var(--ink-3);
+  padding:1px 4px; border-radius:3px; border:1px dashed var(--line-strong);
+  overflow:hidden; white-space:nowrap;
+}
+.rep .rn{overflow:hidden; text-overflow:ellipsis}
+.rep .ri{flex:none; color:var(--rc,var(--ink-3))}
+
+/* ---------- 完成紀錄 ---------- */
+.logsum{display:flex; gap:0; border-bottom:1px solid var(--line)}
+.logsum div{padding:10px 14px; border-right:1px solid var(--line); flex:1}
+.logsum div:last-child{border-right:0}
+.logsum b{display:block; font-family:var(--mono); font-size:19px; font-weight:600; line-height:1.2; font-variant-numeric:tabular-nums}
+.logsum span{font-family:var(--mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-3)}
+
+.logday{
+  display:flex; align-items:center; gap:8px; padding:7px 14px;
+  border-top:1px solid var(--line); background:var(--surface-2);
+  font-family:var(--mono); font-size:10px; letter-spacing:.1em; color:var(--ink-3);
+}
+.logday.is-today{color:var(--accent); font-weight:700}
+.logday b{margin-left:auto; color:var(--ink-2); font-weight:600; letter-spacing:0}
+.logrow{
+  display:flex; align-items:center; gap:9px; padding:9px 14px; border-top:1px solid var(--line);
+}
+.logrow .dot{width:8px; height:8px; border-radius:2px; flex:none}
+.logrow .nm{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.logrow.gone .nm{color:var(--ink-3); text-decoration:line-through}
+.logrow .hr{font-family:var(--mono); font-size:12px; color:var(--ink-2); font-variant-numeric:tabular-nums}
+/* 恢復是誤按之後的救生索，不能藏在 hover 後面 */
+.logrow .undo{color:var(--ink-2)}
 
 /* ---------- modal ---------- */
 dialog{
@@ -442,6 +477,19 @@ dialog .dfoot{padding:12px 16px; border-top:1px solid var(--line); display:flex;
               <input id="fStart" type="date" />
             </div>
           </div>
+          <div class="field">
+            <label for="fRepeat">重複頻率</label>
+            <select id="fRepeat">
+              <option value="">不重複</option>
+              <option value="daily">每天</option>
+              <option value="weekday">每個工作日</option>
+              <option value="weekly">每週</option>
+              <option value="biweekly">每兩週</option>
+              <option value="monthly">每月</option>
+              <option value="yearly">每年</option>
+            </select>
+          </div>
+          <p class="hint" id="fRepeatHint">標記完成後，自動用同樣的設定排到下一次。</p>
           <details class="adv">
             <summary>只在特定星期做</summary>
             <div class="dow-pick" id="fDows"></div>
@@ -470,9 +518,14 @@ dialog .dfoot{padding:12px 16px; border-top:1px solid var(--line); display:flex;
       <div class="seg">
         <button id="viewMonth" aria-pressed="true">月</button>
         <button id="viewWeek" aria-pressed="false">工作週</button>
+        <button id="viewLog" aria-pressed="false">完成紀錄</button>
       </div>
     </div>
-    <div class="calwrap"><div class="grid" id="grid"></div></div>
+    <div class="calwrap" id="calWrap"><div class="grid" id="grid"></div></div>
+    <div id="logWrap" hidden>
+      <div class="logsum" id="logSum"></div>
+      <div id="logList"></div>
+    </div>
   </section>
 </div>
 
@@ -564,7 +617,21 @@ dialog .dfoot{padding:12px 16px; border-top:1px solid var(--line); display:flex;
           <select id="ePrio"><option value="3">高</option><option value="2">一般</option><option value="1">低</option></select>
         </div>
       </div>
-      <div class="field"><label for="eStart">最早可開始</label><input id="eStart" type="date" /></div>
+      <div class="row">
+        <div class="field">
+          <label for="eRepeat">重複頻率</label>
+          <select id="eRepeat">
+            <option value="">不重複</option>
+            <option value="daily">每天</option>
+            <option value="weekday">每個工作日</option>
+            <option value="weekly">每週</option>
+            <option value="biweekly">每兩週</option>
+            <option value="monthly">每月</option>
+            <option value="yearly">每年</option>
+          </select>
+        </div>
+        <div class="field"><label for="eStart">最早可開始</label><input id="eStart" type="date" /></div>
+      </div>
       <details class="adv">
         <summary>只在特定星期做</summary>
         <div class="dow-pick" id="eDows"></div>
@@ -610,6 +677,11 @@ const KEY = "schedcal.v1";
 const DOW_LABEL = ["日","一","二","三","四","五","六"];
 // 中間調，light / dark 兩種底色上都讀得出來
 const PALETTE = ["#1B8F8A","#C07A12","#6B70C4","#C4483A","#4E9660","#9C6B33","#3A82B8","#A8497F"];
+const REPEAT_LABEL = {
+  "":"", daily:"每天", weekday:"每個工作日", weekly:"每週",
+  biweekly:"每兩週", monthly:"每月", yearly:"每年"
+};
+const LOG_MAX = 600;          // 紀錄只留最近這麼多筆，免得 localStorage 無限長大
 const DEFAULTS = {
   dailyCapacity: 4,
   maxChunkPerTask: 2.5,
@@ -624,6 +696,11 @@ const pad = n => String(n).padStart(2,"0");
 const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 function parse(s){ const [y,m,d] = String(s).split("-").map(Number); return new Date(y, m-1, d); }
 function addDays(d,n){ const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate()+n); return x; }
+// 加月份要夾住月底：1/31 的下一次是 2/28，不是 3/3
+function addMonths(d,n){
+  const last = new Date(d.getFullYear(), d.getMonth()+n+1, 0).getDate();
+  return new Date(d.getFullYear(), d.getMonth()+n, Math.min(d.getDate(), last));
+}
 function today(){ const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
 const r2 = v => Math.round(v*100)/100;
 const upHalf = v => Math.ceil(v/0.5)*0.5;
@@ -672,10 +749,14 @@ function load(){
   try{
     const raw = JSON.parse(localStorage.getItem(KEY));
     if(raw && Array.isArray(raw.tasks)){
-      return { tasks: raw.tasks, settings: Object.assign({}, DEFAULTS, raw.settings||{}) };
+      return {
+        tasks: raw.tasks,
+        settings: Object.assign({}, DEFAULTS, raw.settings||{}),
+        log: Array.isArray(raw.log) ? raw.log : []
+      };
     }
   }catch(e){ storageOK = false; }
-  return { tasks: seed(), settings: Object.assign({}, DEFAULTS) };
+  return { tasks: seed(), settings: Object.assign({}, DEFAULTS), log: [] };
 }
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -683,13 +764,16 @@ function save(){
 }
 function seed(){
   const t = today(), T = n => fmt(addDays(t,n));
-  const base = { doneHours:0, priority:2, start:fmt(t), done:false, at:"", days:null };
+  // 重複的範例排在最近的平日，免得一開頁就因為落在週末而顯示緊繃
+  const W = n => { let d = addDays(t,n); while(!DEFAULTS.workdays.includes(d.getDay())) d = addDays(d,1); return fmt(d); };
+  const base = { doneHours:0, priority:2, start:fmt(t), done:false, at:"", days:null, repeat:"" };
   return [
     { ...base, id:uid(), title:"文獻回顧初稿", deadline:T(9),  hours:10, doneHours:2, priority:3, color:PALETTE[0] },
     { ...base, id:uid(), title:"問卷資料清理",  deadline:T(4),  hours:5,  color:PALETTE[1] },
     { ...base, id:uid(), title:"與指導教授 meeting", deadline:T(3), at:"14:00", hours:1, color:PALETTE[2] },
     { ...base, id:uid(), title:"整理田野筆記",  deadline:"",    hours:4, days:[6,0], color:PALETTE[3] },
-    { ...base, id:uid(), title:"訂研討會的會議室", deadline:"", hours:0, color:PALETTE[4] }
+    { ...base, id:uid(), title:"訂研討會的會議室", deadline:"", hours:0, color:PALETTE[4] },
+    { ...base, id:uid(), title:"每週進度回報",  deadline:W(6),  hours:1, repeat:"weekly", color:PALETTE[5] }
   ];
 }
 function uid(){ return Math.random().toString(36).slice(2,10); }
@@ -704,6 +788,102 @@ const isFixed = t => !!(t.at && t.deadline);
 const isSomeday = t => !t.deadline;
 // 這件事允許排在星期幾：自訂的蓋過全域設定
 const taskDows = t => (t.days && t.days.length ? t.days : state.settings.workdays);
+// 有頻率 = 完成後自動排下一次，不會就此消失
+const isRepeat = t => !!(t.repeat && REPEAT_LABEL[t.repeat]);
+
+/* ================= 重複頻率 ================= */
+// 下一次是哪一天。「每個工作日」跟著設定裡的工作日走；工作日全被取消時退回預設，
+// 否則這個迴圈永遠找不到下一天。
+function nextOccur(key, rep){
+  if(!key || !REPEAT_LABEL[rep]) return "";
+  let d = parse(key);
+  if(rep === "daily") d = addDays(d,1);
+  else if(rep === "weekly") d = addDays(d,7);
+  else if(rep === "biweekly") d = addDays(d,14);
+  else if(rep === "monthly") d = addMonths(d,1);
+  else if(rep === "yearly") d = addMonths(d,12);
+  else{
+    const wd = state.settings.workdays.length ? state.settings.workdays : DEFAULTS.workdays;
+    let guard = 0;
+    do{ d = addDays(d,1); }while(!wd.includes(d.getDay()) && ++guard < 14);
+  }
+  return fmt(d);
+}
+// 錯過好幾次的重複任務，補完成時應該跳到「下一個還沒到的日子」，
+// 而不是往前補一堆已經過去的日期。
+function nextOccurAfter(key, rep, minKey){
+  let k = nextOccur(key, rep), guard = 0;
+  while(k && k <= minKey && ++guard < 400) k = nextOccur(k, rep);
+  return k;
+}
+
+/* ================= 完成紀錄 =================
+   每次打卡或標記完成都留一筆，附上異動前的任務快照。
+   有快照才能「恢復」—— 誤按的那一下要能完整還原，包含重複任務已經滾到下一次的日期。 */
+function snap(t){
+  return { deadline:t.deadline || "", start:t.start || "", doneHours:t.doneHours || 0, done:!!t.done };
+}
+function pushLog(e){
+  e.id = uid(); e.ts = Date.now();
+  state.log.unshift(e);
+  if(state.log.length > LOG_MAX) state.log.length = LOG_MAX;
+}
+// 打卡：記下實際做掉的時數；做滿了就順勢完成
+function logProgress(t, hours){
+  const before = snap(t);
+  const add = Math.min(r2(hours), remain(t));
+  if(add <= 0.01) return;
+  t.doneHours = r2(Math.min(t.hours, (t.doneHours || 0) + add));
+  pushLog({ kind:"progress", taskId:t.id, title:t.title, date:fmt(today()), hours:add, before });
+  if(remain(t) <= 0.01) markDone(t);
+}
+// 完成：一般任務就此結案；有頻率的滾到下一次，時數歸零重新開始
+function markDone(t){
+  const before = snap(t);
+  const stamp = fmt(today());
+  const left = isChecklist(t) ? 0 : remain(t);
+  let next = "";
+  if(isRepeat(t)){
+    const anchor = t.deadline || t.start || stamp;
+    next = nextOccurAfter(anchor, t.repeat, stamp);
+    if(next){
+      if(t.deadline){
+        // 起算日跟著往後移同樣的天數，維持原本「提前幾天可以開始」的距離
+        const shift = Math.round((parse(next) - parse(t.deadline)) / 86400000);
+        if(t.start) t.start = fmt(addDays(parse(t.start), shift));
+        t.deadline = next;
+      }else{
+        t.start = next;
+      }
+      t.doneHours = 0;
+      t.done = false;
+    }
+  }
+  if(!next){ t.doneHours = t.hours; t.done = true; }
+  pushLog({ kind:"done", taskId:t.id, title:t.title, date:stamp, hours:left, before, next });
+}
+// 恢復：把快照寫回去，並把這筆紀錄移除
+function undoLog(entryId){
+  const i = state.log.findIndex(e => e.id === entryId);
+  if(i < 0) return;
+  const e = state.log[i], t = taskById(e.taskId);
+  if(t && e.before){
+    t.deadline  = e.before.deadline;
+    t.start     = e.before.start;
+    t.doneHours = e.before.doneHours;
+    t.done      = e.before.done;
+  }
+  state.log.splice(i,1);
+  save(); renderAll();
+}
+// 直接取消勾選：優先用最後一筆完成紀錄還原，沒有紀錄（舊資料）才退回歸零
+function undoDone(t){
+  const e = state.log.find(x => x.taskId === t.id && x.kind === "done");
+  if(e){ undoLog(e.id); return true; }
+  t.done = false;
+  if((t.doneHours || 0) >= t.hours) t.doneHours = 0;
+  return false;
+}
 
 /* ================= scheduler =================
    每天挑「密度最高」的任務先做：密度 = 剩餘時數 ÷ 到期前還剩幾個工作天。
@@ -938,7 +1118,7 @@ function renderToday(){
     const dot = el("span","dot"); dot.style.background = t.color;
     const btn = el("button","btn sm","完成 " + hrs(b.hours) + "h");
     btn.title = "把這段時數記為已完成";
-    btn.onclick = () => { t.doneHours = r2(Math.min(t.hours, (t.doneHours||0) + b.hours)); if(remain(t) <= 0.01) t.done = true; save(); renderAll(); };
+    btn.onclick = () => { logProgress(t, b.hours); save(); renderAll(); };
     row.append(dot);
     if(b.at){ const a = el("span","hr",b.at); a.style.fontWeight = "700"; a.style.color = t.color; row.append(a); }
     row.append(el("span","nm",t.title), el("span","hr",hrs(b.hours)+"h"), btn);
@@ -956,10 +1136,16 @@ function renderTasks(){
   const byDue = (a,b) => cmpStr(a.deadline || "9999", b.deadline || "9999")
     || cmpStr(a.at || "", b.at || "") || b.priority - a.priority;
 
-  // 有期限的進行事曆，沒期限的是清單 —— 分開看比較清楚
+  // 「今天」= 今天到期（含已經過期的）或今天有排到工作。
+  // 先看今天該做什麼，其餘照有沒有期限分開，最後才是已完成。
+  const key = fmt(today());
+  const plannedToday = new Set((plan[key] || []).map(b => b.id));
+  const isToday = t => (t.deadline && t.deadline <= key) || plannedToday.has(t.id);
+
   const groups = [
-    ["排程中",       open.filter(t => t.deadline).sort(byDue)],
-    ["清單・無期限", open.filter(t => !t.deadline).sort(byDue)],
+    ["今天",         open.filter(isToday).sort(byDue)],
+    ["接下來",       open.filter(t => !isToday(t) && t.deadline).sort(byDue)],
+    ["無期限・清單", open.filter(t => !isToday(t) && !t.deadline).sort(byDue)],
     ["已完成",       state.tasks.filter(t => t.done).sort(byDue)]
   ];
 
@@ -979,14 +1165,19 @@ function taskRow(t){
   const chk = el("input","chk"); chk.type = "checkbox"; chk.checked = !!t.done;
   chk.setAttribute("aria-label", (t.done ? "取消完成：" : "標記完成：") + t.title);
   chk.onchange = () => {
-    t.done = chk.checked;
-    if(t.done) t.doneHours = t.hours;
-    else if((t.doneHours || 0) >= t.hours) t.doneHours = 0;
+    if(chk.checked) markDone(t); else undoDone(t);
     save(); renderAll();
   };
   const dot = el("span","dot"); dot.style.background = t.color;
   const chip = el("span","chip " + chipClass(d.status), chipText(d.status));
   const acts = el("div","acts");
+  // 誤按完成很常見，已完成的任務給一個一眼看得到的恢復鍵，不必再去翻紀錄
+  if(t.done){
+    const un = el("button","iconbtn","恢復");
+    un.title = "把這件事放回待辦";
+    un.onclick = () => { undoDone(t); save(); renderAll(); };
+    acts.append(un);
+  }
   const ed = el("button","iconbtn","編輯"); ed.onclick = () => openEdit(t.id);
   acts.append(ed);
   top.append(chk, dot, el("span","title",t.title), chip, acts);
@@ -1007,6 +1198,7 @@ function taskRow(t){
       + (t.at ? " " + t.at : "")));
   }
   if(!isChecklist(t)) meta.append(el("span",null, hrs(t.doneHours || 0) + " / " + hrs(t.hours) + " h"));
+  if(isRepeat(t)) meta.append(el("span",null, "↻ " + REPEAT_LABEL[t.repeat]));
   if(t.days && t.days.length) meta.append(el("span",null, "只在 " + t.days.map(w => DOW_LABEL[w]).join("")));
   if(!t.done && !isFixed(t) && d.finish) meta.append(el("span",null,"完工 " + d.finish.slice(5).replace("-","/")));
   if(meta.childNodes.length) row.append(meta);
@@ -1027,6 +1219,14 @@ function chipText(s){
 
 function renderCalendar(){
   const grid = $("#grid"), st = state.settings;
+
+  // 完成紀錄和行事曆共用同一塊版面
+  const isLog = view === "log";
+  $("#calWrap").hidden = isLog;
+  $("#logWrap").hidden = !isLog;
+  ["prevBtn","nextBtn","todayBtn"].forEach(id => { $("#"+id).hidden = isLog; });
+  if(isLog){ $("#periodLabel").textContent = "完成紀錄"; renderLog(); return; }
+
   grid.innerHTML = "";
   grid.classList.toggle("week5", view === "week");
   const t0 = today();
@@ -1056,6 +1256,20 @@ function renderCalendar(){
     const h = el("div","dow-h" + (st.workdays.includes(w) ? "" : " off"), "週" + DOW_LABEL[w]);
     grid.append(h);
   });
+
+  // 未來的重複次數：排程只算「這一次」，之後的僅在畫面上預告，不佔任何時數
+  const marks = {};
+  if(cells.length){
+    const lastKey = fmt(cells[cells.length-1].d);
+    state.tasks.filter(t => !t.done && isRepeat(t)).forEach(t => {
+      let k = t.deadline || t.start;
+      for(let i = 0; i < 200; i++){
+        k = nextOccur(k, t.repeat);
+        if(!k || k > lastKey) break;
+        (marks[k] || (marks[k] = [])).push(t);
+      }
+    });
+  }
 
   cells.forEach(({d,pad:isPad}) => {
     const key = fmt(d);
@@ -1095,12 +1309,77 @@ function renderCalendar(){
       c.append(n);
     });
 
+    (marks[key] || []).forEach(t => {
+      const n = el("div","rep"); n.style.setProperty("--rc", t.color);
+      n.title = `${t.title} — ${REPEAT_LABEL[t.repeat]}，完成這次之後才會排時數`;
+      n.append(el("span","ri","↻"), el("span","rn",t.title));
+      c.append(n);
+    });
+
     if(total > 0){
       const m = el("div","meter"); const i = el("i");
       i.style.width = Math.min(100, ratio*100) + "%"; m.append(i); c.append(m);
     }
     grid.append(c);
   });
+}
+
+/* ================= 完成紀錄頁 ================= */
+function renderLog(){
+  const sum = $("#logSum"), list = $("#logList");
+  sum.innerHTML = ""; list.innerHTML = "";
+
+  const t0 = today(), key = fmt(t0);
+  // 本週從週一算起
+  const weekStart = fmt(addDays(t0, -((t0.getDay()+6) % 7)));
+  const hoursOf = f => state.log.filter(f).reduce((s,e) => s + (e.hours || 0), 0);
+
+  const card = (label, val) => {
+    const d = el("div");
+    d.append(el("b", null, val), el("span", null, label));
+    sum.append(d);
+  };
+  card("今日完成", hrs(hoursOf(e => e.date === key)) + "h");
+  card("本週完成", hrs(hoursOf(e => e.date >= weekStart)) + "h");
+  card("今日結案", String(state.log.filter(e => e.date === key && e.kind === "done").length) + " 件");
+  card("累計結案", String(state.log.filter(e => e.kind === "done").length) + " 件");
+
+  if(!state.log.length){
+    list.append(el("div","empty","還沒有完成紀錄。在左邊的今日面板打卡，或勾選任務完成，這裡就會留下紀錄。"));
+    return;
+  }
+
+  // 依日期由新到舊分段，同一天內維持發生順序（新的在上）
+  const byDate = {};
+  state.log.forEach(e => { (byDate[e.date] || (byDate[e.date] = [])).push(e); });
+  const days = Object.keys(byDate).sort().reverse().map(date => ({ date, items:byDate[date] }));
+
+  days.forEach(g => {
+    const total = g.items.reduce((s,e) => s + (e.hours || 0), 0);
+    const dt = parse(g.date);
+    const h = el("div","logday" + (g.date === key ? " is-today" : ""));
+    h.append(el("span",null, g.date + "（週" + DOW_LABEL[dt.getDay()] + "）" + (g.date === key ? " 今天" : "")));
+    h.append(el("b",null, hrs(total) + "h ・ " + g.items.length + " 筆"));
+    list.append(h);
+    g.items.forEach(e => list.append(logRow(e)));
+  });
+}
+
+function logRow(e){
+  const t = taskById(e.taskId);
+  const row = el("div","logrow" + (t ? "" : " gone"));
+  const dot = el("span","dot"); dot.style.background = t ? t.color : "var(--ink-3)";
+  const nm = el("span","nm", e.title);
+  const kind = el("span","chip " + (e.kind === "done" ? "ok" : "idle"),
+    e.kind === "done" ? (e.next ? "完成・下次 " + e.next.slice(5).replace("-","/") : "完成") : "打卡");
+  row.append(dot, nm, kind);
+  if(e.hours > 0) row.append(el("span","hr", hrs(e.hours) + "h"));
+
+  const un = el("button","btn sm undo", t ? "恢復" : "刪除紀錄");
+  un.title = t ? "還原成這筆紀錄之前的狀態" : "這個任務已被刪除，只能移除紀錄";
+  un.onclick = () => undoLog(e.id);
+  row.append(un);
+  return row;
 }
 
 function esc(s){ return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
@@ -1114,6 +1393,17 @@ function syncAddUnit(){
 }
 $("#fUnit").addEventListener("change", syncAddUnit);
 $("#fHours").addEventListener("input", syncAddUnit);
+
+// 有沒有填日期，決定重複是往後推截止日還是推起算日 —— 講清楚再送出
+function syncRepeatHint(){
+  const rep = $("#fRepeat").value, h = $("#fRepeatHint");
+  if(!rep){ h.textContent = "標記完成後，自動用同樣的設定排到下一次。"; return; }
+  h.textContent = $("#fDue").value
+    ? `完成後截止日自動變成下一次（${REPEAT_LABEL[rep]}），時數重新開始算。`
+    : `沒填日期也可以：完成後從「最早可開始」往後推到下一次（${REPEAT_LABEL[rep]}）。`;
+}
+$("#fRepeat").addEventListener("change", syncRepeatHint);
+$("#fDue").addEventListener("change", syncRepeatHint);
 
 // 星期挑選器，新增表單與編輯視窗共用
 function buildDowPick(box, getSel, setSel){
@@ -1143,6 +1433,7 @@ $("#addForm").addEventListener("submit", e => {
   state.tasks.push({
     id: uid(), title, deadline, hours, unit,
     at: deadline ? $("#fAt").value : "",       // 沒有日期就談不上固定時段
+    repeat: $("#fRepeat").value,
     days: fDays.length ? [...fDays] : null,
     doneHours: 0,
     priority: parseInt($("#fPrio").value,10),
@@ -1153,7 +1444,8 @@ $("#addForm").addEventListener("submit", e => {
   save(); renderAll();
   e.target.reset();
   $("#fHours").value = 3; $("#fUnit").value = "h"; $("#fPrio").value = "2";
-  $("#fDue").value = ""; $("#fAt").value = "";
+  $("#fDue").value = ""; $("#fAt").value = ""; $("#fRepeat").value = "";
+  syncRepeatHint();
   $("#fStart").value = fmt(today());
   fDays = []; buildDowPick($("#fDows"), () => fDays, s => { fDays = s; });
   syncAddUnit();
@@ -1165,10 +1457,12 @@ $("#nextBtn").onclick = () => { cursor = view === "month" ? new Date(cursor.getF
 $("#todayBtn").onclick = () => { cursor = today(); renderCalendar(); };
 $("#viewMonth").onclick = () => setView("month");
 $("#viewWeek").onclick  = () => setView("week");
+$("#viewLog").onclick   = () => setView("log");
 function setView(v){
   view = v; cursor = today();
   $("#viewMonth").setAttribute("aria-pressed", String(v === "month"));
   $("#viewWeek").setAttribute("aria-pressed", String(v === "week"));
+  $("#viewLog").setAttribute("aria-pressed", String(v === "log"));
   renderCalendar();
 }
 
@@ -1208,6 +1502,7 @@ function openEdit(id){
   $("#eHours").value = fromHours(t.hours, editUnit);
   $("#eDone").value = fromHours(t.doneHours || 0, editUnit);
   $("#ePrio").value = String(t.priority); $("#eStart").value = t.start || "";
+  $("#eRepeat").value = REPEAT_LABEL[t.repeat] ? t.repeat : "";
   syncEditUnit();
   $("#dlgEdit").showModal();
 }
@@ -1217,6 +1512,7 @@ $("#dlgEdit").addEventListener("close", () => {
     t.title = $("#eTitle").value.trim() || t.title;
     t.deadline = $("#eDue").value;                    // 可以清空，變成無期限
     t.at = t.deadline ? $("#eAt").value : "";
+    t.repeat = $("#eRepeat").value;
     t.days = eDays.length ? [...eDays] : null;
     const u = $("#eUnit").value;
     t.unit = u;
@@ -1224,7 +1520,8 @@ $("#dlgEdit").addEventListener("close", () => {
     t.doneHours = Math.min(t.hours, Math.max(0, toHours(parseFloat($("#eDone").value) || 0, u)));
     t.priority = parseInt($("#ePrio").value,10);
     t.start = $("#eStart").value || t.start;
-    t.done = t.hours > 0 ? remain(t) <= 0.01 : t.done;
+    // 重複任務不由編輯視窗自動結案：要滾到下一次得走「完成」那條路
+    t.done = (t.hours > 0 && !isRepeat(t)) ? remain(t) <= 0.01 : t.done;
   }else if(t && v === "delete"){
     state.tasks = state.tasks.filter(x => x.id !== editing);
   }
@@ -1336,6 +1633,7 @@ $("#xFile").onchange = e => {
       if(!Array.isArray(o.tasks)) throw 0;
       state.tasks = o.tasks;
       state.settings = Object.assign({}, DEFAULTS, o.settings || {});
+      state.log = Array.isArray(o.log) ? o.log : [];
       save(); renderAll();
       $("#xStatus").className = "status ok";
       $("#xStatus").textContent = `已匯入 ${o.tasks.length} 筆任務`;
@@ -1351,6 +1649,7 @@ $("#xFile").onchange = e => {
 /* ================= boot ================= */
 $("#fStart").value = fmt(today());
 syncAddUnit();
+syncRepeatHint();
 renderAll();
 
 // 跨分頁同步，以及過午夜自動翻頁

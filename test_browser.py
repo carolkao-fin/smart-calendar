@@ -7,6 +7,7 @@
 驗證的是「瀏覽器實際算出來、實際畫出來」的結果，不是重寫一份邏輯來對答案。
 測試依賴 index.html 內建的範例資料（seed），改動 seed 時這裡也要跟著改。
 """
+import datetime
 import io
 import json
 import os
@@ -42,17 +43,23 @@ def find_browser():
     return None
 
 
-# 注入頁面的探針：把渲染後的 DOM 摘要塞進 document.title 帶回來
+# 注入頁面的探針：把渲染後的 DOM 摘要塞進 document.title 帶回來。
+# 除了讀初始畫面，也真的去點勾選框與恢復鍵，驗證互動後的結果。
 PROBE = r"""
 <script>
 (function(){
   var out = {errors: []};
-  try{
-    out.cells = [].slice.call(document.querySelectorAll('#grid .cell')).map(function(c,i){
+  var $  = function(s){ return document.querySelector(s); };
+  var $$ = function(s){ return [].slice.call(document.querySelectorAll(s)); };
+
+  function readCells(){
+    return $$('#grid .cell').map(function(c,i){
       var tot = c.querySelector('.dnum .tot');
       return {
         col: i % 7,                                   // 月檢視 7 欄，第 0 欄是週日
         total: tot ? parseFloat(tot.textContent) : 0,
+        repeats: [].slice.call(c.querySelectorAll('.rep .rn'))
+                   .map(function(r){ return r.textContent; }),
         blocks: [].slice.call(c.querySelectorAll('.blk')).map(function(b){
           return {
             name: b.querySelector('.bn').textContent,
@@ -63,22 +70,112 @@ PROBE = r"""
         })
       };
     });
-    out.groups = [].slice.call(document.querySelectorAll('#taskList .grp'))
-      .map(function(g){ return g.firstChild.textContent; });
-    out.tasks = [].slice.call(document.querySelectorAll('#taskList .task')).map(function(t){
+  }
+  function readTasks(){
+    return $$('#taskList .task').map(function(t){
       return {
         title: t.querySelector('.title').textContent,
         chip: t.querySelector('.chip') ? t.querySelector('.chip').textContent : null,
         hasBar: !!t.querySelector('.pbar'),
         hasCheckbox: !!t.querySelector('.chk'),
+        checked: t.querySelector('.chk') ? t.querySelector('.chk').checked : null,
+        hasUndo: [].slice.call(t.querySelectorAll('.iconbtn'))
+                   .some(function(b){ return b.textContent === '恢復'; }),
         meta: t.querySelector('.meta') ? t.querySelector('.meta').textContent : ''
       };
     });
-    out.readout = [].slice.call(document.querySelectorAll('#readout div'))
-      .map(function(d){ return d.querySelector('span').textContent + '=' + d.querySelector('b').textContent; });
-    out.hasUnitSelect = !!document.querySelector('#fUnit');
-    out.hasTimeInput  = !!document.querySelector('#fAt');
-    out.dowOptions    = document.querySelectorAll('#fDows label').length;
+  }
+  function readGroups(){
+    return $$('#taskList .grp').map(function(g){ return g.firstChild.textContent; });
+  }
+  function readLog(){
+    return {
+      logVisible: !$('#logWrap').hidden && $('#calWrap').hidden,
+      sum: $$('#logSum div').map(function(d){
+        return d.querySelector('span').textContent + '=' + d.querySelector('b').textContent; }),
+      days: $$('#logList .logday').map(function(d){ return d.textContent; }),
+      rows: $$('#logList .logrow').map(function(r){
+        var h = r.querySelector('.hr');
+        return {
+          name: r.querySelector('.nm').textContent,
+          kind: r.querySelector('.chip').textContent,
+          hours: h ? parseFloat(h.textContent) : 0,
+          btn: r.querySelector('.undo').textContent
+        };
+      })
+    };
+  }
+  function taskRow(title){
+    return $$('#taskList .task').filter(function(t){
+      return t.querySelector('.title').textContent === title; })[0];
+  }
+  function click(node){ node.click(); }
+  function toggle(title){ taskRow(title).querySelector('.chk').click(); }
+  function undoFirstLogRow(){
+    click($('#viewLog'));
+    var btn = $('#logList .logrow .undo');
+    if(btn) btn.click();
+  }
+  // 打卡可能連帶把任務做完（兩筆紀錄），全部退掉才回得到原狀
+  function undoAllLogRows(){
+    click($('#viewLog'));
+    for(var i = 0; i < 6; i++){
+      var btn = $('#logList .logrow .undo');
+      if(!btn) break;
+      btn.click();
+    }
+  }
+
+  try{
+    out.cells   = readCells();
+    out.groups  = readGroups();
+    out.tasks   = readTasks();
+    out.repeatMarks = $$('#grid .cell .rep .rn').map(function(r){ return r.textContent; });
+    out.readout = $$('#readout div').map(function(d){
+      return d.querySelector('span').textContent + '=' + d.querySelector('b').textContent; });
+    out.hasUnitSelect   = !!$('#fUnit');
+    out.hasTimeInput    = !!$('#fAt');
+    out.hasRepeatSelect = !!$('#fRepeat');
+    out.repeatOptions   = $$('#fRepeat option').map(function(o){ return o.value; });
+    out.dowOptions      = document.querySelectorAll('#fDows label').length;
+
+    // --- 打卡：今日面板上的「完成 Xh」（今天不是工作日時可能沒有可打卡的項目）---
+    var slotBtn = $('#todayList .slot button');
+    out.hadSlot = !!slotBtn;
+    if(slotBtn){
+      out.slotLabel = slotBtn.textContent;
+      slotBtn.click();
+      click($('#viewLog'));
+      out.afterCheckin = readLog();
+      out.afterCheckinTasks = readTasks();
+      undoAllLogRows();                         // 打卡也要能恢復
+      out.afterCheckinUndo = readLog();
+      out.afterCheckinUndoTasks = readTasks();
+      click($('#viewMonth'));
+    }
+
+    // --- 一般任務：勾完成 → 進「已完成」→ 有紀錄 → 恢復 ---
+    toggle('問卷資料清理');
+    out.afterDone = { groups: readGroups(), tasks: readTasks() };
+    click($('#viewLog'));
+    out.afterDoneLog = readLog();
+    undoFirstLogRow();
+    out.afterUndo = { groups: readGroups(), tasks: readTasks(), log: readLog() };
+    click($('#viewMonth'));
+
+    // --- 重複任務：勾完成 → 不結案，截止日往後推一次 → 恢復回原本日期 ---
+    var rep = taskRow('每週進度回報');
+    out.repeatMetaBefore = rep ? rep.querySelector('.meta').textContent : '';
+    toggle('每週進度回報');
+    var rep2 = taskRow('每週進度回報');
+    out.repeatStillOpen = !!rep2 && !rep2.classList.contains('done');
+    out.repeatMetaAfter = rep2 ? rep2.querySelector('.meta').textContent : '';
+    click($('#viewLog'));
+    out.repeatLog = readLog();
+    undoFirstLogRow();
+    var rep3 = taskRow('每週進度回報');
+    out.repeatMetaRestored = rep3 ? rep3.querySelector('.meta').textContent : '';
+    out.repeatLogAfterUndo = readLog();
   }catch(e){ out.errors.push(String(e) + ' @ ' + (e.stack || '').split('\n')[1]); }
   document.title = 'PROBE' + JSON.stringify(out) + 'ENDPROBE';
 })();
@@ -86,6 +183,15 @@ PROBE = r"""
 """
 
 FAILS = []
+
+
+def md(meta):
+    """從 meta 文字裡抓出第一個 MM/DD（就是截止日），回傳 date 以便相減。"""
+    m = re.search(r'(\d{2})/(\d{2})', meta or '')
+    if not m:
+        return None
+    y = datetime.date.today().year
+    return datetime.date(y, int(m.group(1)), int(m.group(2)))
 
 
 def check(label, cond, detail=''):
@@ -123,10 +229,13 @@ def main():
     print('=== 頁面載入 ===')
     check('JS 執行無例外', not d['errors'], d['errors'])
     check('行事曆有渲染出格子', len(d['cells']) >= 28, len(d['cells']))
-    check('任務清單有渲染 5 筆範例', len(d['tasks']) == 5, [t['title'] for t in d['tasks']])
+    check('任務清單有渲染 6 筆範例', len(d['tasks']) == 6, [t['title'] for t in d['tasks']])
     check('單位選單存在', d['hasUnitSelect'])
     check('特定時間欄位存在', d['hasTimeInput'])
     check('指定星期有 7 個選項', d['dowOptions'] == 7, d['dowOptions'])
+    check('重複頻率選單存在', d['hasRepeatSelect'])
+    check('重複頻率有六種可選', d['repeatOptions'] ==
+          ['', 'daily', 'weekday', 'weekly', 'biweekly', 'monthly', 'yearly'], d['repeatOptions'])
 
     print('\n=== 排程結果（瀏覽器實際算出）===')
     for c in d['cells']:
@@ -156,7 +265,11 @@ def main():
 
     print('\n=== 任務清單 ===')
     print('  分組：', d['groups'])
-    check('分組正確', '排程中' in d['groups'] and '清單・無期限' in d['groups'], d['groups'])
+    check('有「今天」與「無期限・清單」分組',
+          '今天' in d['groups'] and '無期限・清單' in d['groups'], d['groups'])
+    check('未完成的分組順序正確',
+          [g for g in d['groups'] if g != '已完成'] ==
+          [g for g in ['今天', '接下來', '無期限・清單'] if g in d['groups']], d['groups'])
     for t in d['tasks']:
         print('    %-16s %-5s bar=%-5s chk=%s' % (t['title'], t['chip'], t['hasBar'], t['hasCheckbox']))
     check('每個任務都有勾選框', all(t['hasCheckbox'] for t in d['tasks']))
@@ -171,6 +284,71 @@ def main():
     mt = by['與指導教授 meeting']
     check('固定時段標為「固定」且顯示時間', mt['chip'] == '固定' and '14:00' in mt['meta'],
           (mt['chip'], mt['meta']))
+
+    print('\n=== 重複頻率 ===')
+    rep_task = by['每週進度回報']
+    check('重複任務在清單上標出頻率', '↻' in rep_task['meta'] and '每週' in rep_task['meta'],
+          rep_task['meta'])
+    check('行事曆預告了之後的重複次數',
+          d['repeatMarks'].count('每週進度回報') >= 1, d['repeatMarks'])
+    d1, d2 = md(d['repeatMetaBefore']), md(d['repeatMetaAfter'])
+    print('  截止日：%s → 完成後 %s' % (d1, d2))
+    check('完成重複任務不會結案，仍留在待辦', d['repeatStillOpen'])
+    check('完成後截止日往後推一週', d1 and d2 and (d2 - d1).days == 7, (d1, d2))
+    check('完成重複任務會留下紀錄並標示下一次',
+          any(r['name'] == '每週進度回報' and '下次' in r['kind'] for r in d['repeatLog']['rows']),
+          d['repeatLog']['rows'])
+    check('恢復後截止日回到原本那天', md(d['repeatMetaRestored']) == d1,
+          (d['repeatMetaRestored'], d1))
+    check('恢復後該筆紀錄消失',
+          not [r for r in d['repeatLogAfterUndo']['rows'] if r['name'] == '每週進度回報'],
+          d['repeatLogAfterUndo']['rows'])
+
+    print('\n=== 完成紀錄頁 ===')
+    check('切到完成紀錄會換掉行事曆版面', d['afterDoneLog']['logVisible'])
+    print('  統計：', d['afterDoneLog']['sum'])
+    print('  分日：', d['afterDoneLog']['days'])
+    for r in d['afterDoneLog']['rows']:
+        print('    %-16s %-14s %sh  [%s]' % (r['name'], r['kind'], r['hours'], r['btn']))
+    check('統計有四項（今日／本週／今日結案／累計）', len(d['afterDoneLog']['sum']) == 4,
+          d['afterDoneLog']['sum'])
+    check('紀錄依日期分段且標出今天',
+          any('今天' in x for x in d['afterDoneLog']['days']), d['afterDoneLog']['days'])
+    check('完成任務會產生一筆紀錄',
+          any(r['name'] == '問卷資料清理' and r['kind'] == '完成'
+              for r in d['afterDoneLog']['rows']), d['afterDoneLog']['rows'])
+    check('每筆紀錄都有恢復鍵',
+          all(r['btn'] == '恢復' for r in d['afterDoneLog']['rows']), d['afterDoneLog']['rows'])
+
+    print('\n=== 誤按完成可以恢復 ===')
+    done_by = {t['title']: t for t in d['afterDone']['tasks']}
+    check('勾選後歸到「已完成」', '已完成' in d['afterDone']['groups'], d['afterDone']['groups'])
+    check('已完成的任務顯示恢復鍵', done_by['問卷資料清理']['hasUndo'],
+          done_by['問卷資料清理'])
+    undo_by = {t['title']: t for t in d['afterUndo']['tasks']}
+    check('恢復後回到未完成', not undo_by['問卷資料清理']['checked'],
+          undo_by['問卷資料清理'])
+    check('恢復後進度回到原本的 0 / 5 h', '0 / 5 h' in undo_by['問卷資料清理']['meta'],
+          undo_by['問卷資料清理']['meta'])
+    check('恢復後「已完成」分組消失', '已完成' not in d['afterUndo']['groups'],
+          d['afterUndo']['groups'])
+    check('恢復後紀錄也一併移除',
+          not [r for r in d['afterUndo']['log']['rows'] if r['name'] == '問卷資料清理'],
+          d['afterUndo']['log']['rows'])
+
+    print('\n=== 今日打卡 ===')
+    if not d['hadSlot']:
+        print('  （今天沒有排定工作，略過打卡測試）')
+    else:
+        print('  按鈕：', d['slotLabel'])
+        ci = [r for r in d['afterCheckin']['rows'] if r['kind'] == '打卡']
+        check('打卡會留下一筆紀錄與時數', ci and ci[0]['hours'] > 0, d['afterCheckin']['rows'])
+        check('打卡的時數算進今日完成',
+              any(s.startswith('今日完成=') and float(s.split('=')[1].rstrip('h')) > 0
+                  for s in d['afterCheckin']['sum']), d['afterCheckin']['sum'])
+        check('打卡也能恢復',
+              not [r for r in d['afterCheckinUndo']['rows'] if r['kind'] == '打卡'],
+              d['afterCheckinUndo']['rows'])
 
     print('\n=== 摘要列 ===')
     print('  ', d['readout'])
