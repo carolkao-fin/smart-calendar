@@ -359,8 +359,6 @@ dialog .dfoot{padding:12px 16px; border-top:1px solid var(--line); display:flex;
 .taglist button{border:0; background:transparent; color:var(--ink-3); padding:0 2px; font-size:13px; line-height:1}
 .taglist button:hover{color:var(--crit)}
 
-fieldset{border:1px solid var(--line); border-radius:var(--r); padding:12px; margin:0 0 14px}
-legend{font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); padding:0 6px}
 .note{font-size:12px; color:var(--ink-2); line-height:1.65}
 .note code{font-family:var(--mono); font-size:11.5px; background:var(--surface-2); padding:1px 4px; border-radius:3px}
 .status{font-family:var(--mono); font-size:11px; margin-top:8px; min-height:16px}
@@ -380,7 +378,6 @@ legend{font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-trans
   <div class="readout" id="readout"></div>
 
   <button class="btn" id="btnSettings">設定</button>
-  <button class="btn" id="btnLine">LINE 連動</button>
   <button class="btn" id="btnExport">匯出</button>
 </header>
 
@@ -582,41 +579,6 @@ legend{font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-trans
   </form>
 </dialog>
 
-<!-- ============ LINE ============ -->
-<dialog id="dlgLine">
-  <h3>LINE 連動</h3>
-  <div class="dbody">
-    <p class="note">
-      接上自架的 LINE Bot 後，在 LINE 裡打一句 <code>報告 8/20 6h</code> 就會新增任務，這個頁面每分鐘自動抓回最新排程；改動也會推回去。
-      伺服器程式和架設步驟在 <code>line_bot.py</code> 與 <code>README.md</code>。
-    </p>
-    <fieldset style="margin-top:14px">
-      <legend>連線</legend>
-      <div class="field">
-        <label for="lUrl">伺服器網址</label>
-        <input id="lUrl" type="url" placeholder="https://your-bot.onrender.com" />
-      </div>
-      <div class="field">
-        <label for="lToken">同步密鑰</label>
-        <input id="lToken" type="password" placeholder="SYNC_TOKEN" />
-      </div>
-      <label style="display:flex; gap:7px; align-items:center; font-size:13px">
-        <input type="checkbox" id="lAuto" /> 每 60 秒自動同步
-      </label>
-      <div class="status" id="lStatus"></div>
-    </fieldset>
-    <div style="display:flex; gap:8px">
-      <button class="btn" type="button" id="lTest">測試連線</button>
-      <button class="btn" type="button" id="lPull">從伺服器拉回</button>
-      <button class="btn" type="button" id="lPush">推送到伺服器</button>
-    </div>
-    <p class="hint" style="margin-top:14px">
-      這個頁面若是透過 claude.ai 的分享連結開啟，瀏覽器的安全政策會擋掉對外連線；請把 <code>index.html</code> 存到本機或自己的網域再用連動功能。
-    </p>
-  </div>
-  <div class="dfoot"><button class="btn primary" id="lClose" type="button">完成</button></div>
-</dialog>
-
 <!-- ============ EXPORT ============ -->
 <dialog id="dlgExport">
   <h3>匯出與備份</h3>
@@ -697,7 +659,6 @@ let view = "month";
 let cursor = today();
 let plan = {};        // 'YYYY-MM-DD' -> [{id, hours}]
 let diag = {};        // taskId -> {finish, status, remaining}
-let syncTimer = null;
 
 // 內嵌在 iframe（例如 Streamlit）或瀏覽器封鎖網站資料時，localStorage 會丟例外。
 // 這時仍可正常操作，但關掉分頁就會消失 —— 必須讓使用者知道，不能默默掉資料。
@@ -711,10 +672,10 @@ function load(){
   try{
     const raw = JSON.parse(localStorage.getItem(KEY));
     if(raw && Array.isArray(raw.tasks)){
-      return { tasks: raw.tasks, settings: Object.assign({}, DEFAULTS, raw.settings||{}), line: raw.line || {url:"",token:"",auto:false} };
+      return { tasks: raw.tasks, settings: Object.assign({}, DEFAULTS, raw.settings||{}) };
     }
   }catch(e){ storageOK = false; }
-  return { tasks: seed(), settings: Object.assign({}, DEFAULTS), line:{url:"",token:"",auto:false} };
+  return { tasks: seed(), settings: Object.assign({}, DEFAULTS) };
 }
 function save(){
   try{ localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -977,7 +938,7 @@ function renderToday(){
     const dot = el("span","dot"); dot.style.background = t.color;
     const btn = el("button","btn sm","完成 " + hrs(b.hours) + "h");
     btn.title = "把這段時數記為已完成";
-    btn.onclick = () => { t.doneHours = r2(Math.min(t.hours, (t.doneHours||0) + b.hours)); if(remain(t) <= 0.01) t.done = true; save(); renderAll(); pushIfLinked(); };
+    btn.onclick = () => { t.doneHours = r2(Math.min(t.hours, (t.doneHours||0) + b.hours)); if(remain(t) <= 0.01) t.done = true; save(); renderAll(); };
     row.append(dot);
     if(b.at){ const a = el("span","hr",b.at); a.style.fontWeight = "700"; a.style.color = t.color; row.append(a); }
     row.append(el("span","nm",t.title), el("span","hr",hrs(b.hours)+"h"), btn);
@@ -1021,7 +982,7 @@ function taskRow(t){
     t.done = chk.checked;
     if(t.done) t.doneHours = t.hours;
     else if((t.doneHours || 0) >= t.hours) t.doneHours = 0;
-    save(); renderAll(); pushIfLinked();
+    save(); renderAll();
   };
   const dot = el("span","dot"); dot.style.background = t.color;
   const chip = el("span","chip " + chipClass(d.status), chipText(d.status));
@@ -1189,7 +1150,7 @@ $("#addForm").addEventListener("submit", e => {
     done: false,
     color: PALETTE[state.tasks.length % PALETTE.length]
   });
-  save(); renderAll(); pushIfLinked();
+  save(); renderAll();
   e.target.reset();
   $("#fHours").value = 3; $("#fUnit").value = "h"; $("#fPrio").value = "2";
   $("#fDue").value = ""; $("#fAt").value = "";
@@ -1268,7 +1229,7 @@ $("#dlgEdit").addEventListener("close", () => {
     state.tasks = state.tasks.filter(x => x.id !== editing);
   }
   editing = null;
-  if(v === "save" || v === "delete"){ save(); renderAll(); pushIfLinked(); }
+  if(v === "save" || v === "delete"){ save(); renderAll(); }
 });
 
 /* ---- settings ---- */
@@ -1387,78 +1348,9 @@ $("#xFile").onchange = e => {
   r.readAsText(f);
 };
 
-/* ================= LINE sync ================= */
-$("#btnLine").onclick = () => {
-  $("#lUrl").value = state.line.url || "";
-  $("#lToken").value = state.line.token || "";
-  $("#lAuto").checked = !!state.line.auto;
-  $("#lStatus").textContent = "";
-  $("#dlgLine").showModal();
-};
-$("#lClose").onclick = () => {
-  state.line = { url: $("#lUrl").value.trim().replace(/\/$/,""), token: $("#lToken").value.trim(), auto: $("#lAuto").checked };
-  save(); setupSync(); $("#dlgLine").close();
-};
-function lstat(ok, msg){ const s = $("#lStatus"); s.className = "status " + (ok ? "ok" : "bad"); s.textContent = msg; }
-
-async function api(path, opts){
-  const url = ($("#lUrl").value || state.line.url || "").trim().replace(/\/$/,"");
-  const token = ($("#lToken").value || state.line.token || "").trim();
-  if(!url) throw new Error("還沒填伺服器網址");
-  const res = await fetch(url + path, Object.assign({
-    headers: { "Content-Type": "application/json", "X-Sync-Token": token }
-  }, opts || {}));
-  if(res.status === 401) throw new Error("密鑰不對，伺服器拒絕連線");
-  if(!res.ok) throw new Error("伺服器回應 " + res.status);
-  return res.json();
-}
-
-$("#lTest").onclick = async () => {
-  try{ const j = await api("/api/ping"); lstat(true, `連線成功 — 伺服器上有 ${j.tasks} 筆任務`); }
-  catch(e){ lstat(false, "連不上：" + e.message); }
-};
-$("#lPull").onclick = async () => {
-  try{
-    const j = await api("/api/state");
-    if(Array.isArray(j.tasks)){
-      state.tasks = j.tasks.map(t => Object.assign({ doneHours:0, priority:2, done:false, color:PALETTE[0] }, t));
-      state.tasks.forEach((t,i) => { if(!t.color) t.color = PALETTE[i % PALETTE.length]; });
-      save(); renderAll(); lstat(true, `已拉回 ${j.tasks.length} 筆任務`);
-    }
-  }catch(e){ lstat(false, "拉取失敗：" + e.message); }
-};
-$("#lPush").onclick = async () => {
-  try{
-    await api("/api/state", { method:"PUT", body: JSON.stringify({ tasks: state.tasks, settings: state.settings }) });
-    lstat(true, "已推送到伺服器");
-  }catch(e){ lstat(false, "推送失敗：" + e.message); }
-};
-
-let lastSig = "";
-function pushIfLinked(){
-  if(!state.line.url || !state.line.auto) return;
-  api("/api/state", { method:"PUT", body: JSON.stringify({ tasks: state.tasks, settings: state.settings }) }).catch(() => {});
-}
-function setupSync(){
-  clearInterval(syncTimer); syncTimer = null;
-  if(!state.line.url || !state.line.auto) return;
-  syncTimer = setInterval(async () => {
-    try{
-      const j = await api("/api/state");
-      const sig = JSON.stringify(j.tasks);
-      if(sig !== lastSig && Array.isArray(j.tasks)){
-        lastSig = sig;
-        state.tasks = j.tasks.map((t,i) => Object.assign({ doneHours:0, priority:2, done:false, color:PALETTE[i % PALETTE.length] }, t));
-        save(); renderAll();
-      }
-    }catch(e){}
-  }, 60000);
-}
-
 /* ================= boot ================= */
 $("#fStart").value = fmt(today());
 syncAddUnit();
-setupSync();
 renderAll();
 
 // 跨分頁同步，以及過午夜自動翻頁

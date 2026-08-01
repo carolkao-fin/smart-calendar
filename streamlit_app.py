@@ -52,6 +52,5 @@ with st.sidebar:
     )
     st.markdown(
         "- 想長期保存，請用頁面右上角的 **匯出 → 下載 JSON** 備份\n"
-        "- 想匯入 Google 日曆，用 **匯出 → 下載 .ics**\n"
-        "- LINE 連動需要另外架 `line_bot.py`，步驟見 README"
+        "- 想匯入 Google 日曆，用 **匯出 → 下載 .ics**"
     )
