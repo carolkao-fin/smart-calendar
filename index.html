@@ -185,7 +185,40 @@ button{cursor:pointer}
 }
 .conv:empty{display:none}
 
+/* 進階選項摺疊 */
+.adv{margin:0 0 12px; border-top:1px solid var(--line); padding-top:10px}
+.adv summary{
+  cursor:pointer; list-style:none; color:var(--ink-3);
+  font-family:var(--mono); font-size:10px; letter-spacing:.12em; text-transform:uppercase;
+}
+.adv summary::-webkit-details-marker{display:none}
+.adv summary::before{content:"＋ "}
+.adv[open] summary::before{content:"− "}
+.adv summary:hover{color:var(--ink)}
+.adv > .dow-pick{margin-top:10px}
+
 /* ---------- task list ---------- */
+.grp{
+  display:flex; align-items:center; gap:8px; padding:7px 14px;
+  border-top:1px solid var(--line); background:var(--surface-2);
+  font-family:var(--mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--ink-3);
+}
+.grp:first-child{border-top:0}
+.grp b{margin-left:auto; color:var(--ink-2); font-weight:600}
+
+.chk{
+  appearance:none; -webkit-appearance:none; position:relative; flex:none; margin:0;
+  width:15px; height:15px; border:1.5px solid var(--line-strong); border-radius:3px;
+  background:var(--surface); cursor:pointer; transition:background .12s, border-color .12s;
+}
+.chk:hover{border-color:var(--accent)}
+.chk:checked{background:var(--ok); border-color:var(--ok)}
+.chk:checked::after{
+  content:""; position:absolute; left:4px; top:1px; width:3px; height:7px;
+  border:solid #fff; border-width:0 2px 2px 0; transform:rotate(42deg);
+}
+
 .task{padding:11px 14px; border-top:1px solid var(--line); display:grid; gap:7px}
 .task:first-child{border-top:0}
 .task.done{opacity:.5}
@@ -281,6 +314,12 @@ button{cursor:pointer}
 }
 .blk .bn{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .blk .bh{font-family:var(--mono); font-size:10px; color:var(--ink-3); font-variant-numeric:tabular-nums; flex:none}
+/* 固定時段：實心底色，和可挪動的工作區塊一眼分得出來 */
+.blk.fixed{background:color-mix(in oklab, var(--bc) 17%, var(--surface)); border-left-width:0; padding-left:6px}
+.blk .bt{
+  font-family:var(--mono); font-size:10px; font-weight:700; flex:none;
+  color:var(--bc); font-variant-numeric:tabular-nums;
+}
 .due{
   display:flex; align-items:center; gap:4px; font-size:10.5px; font-weight:600;
   color:var(--crit); padding:1px 4px; border-radius:3px;
@@ -371,21 +410,27 @@ legend{font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-trans
           <div class="row">
             <div class="field">
               <label for="fDue">何時要完成</label>
-              <input id="fDue" type="date" required />
+              <input id="fDue" type="date" />
             </div>
             <div class="field">
-              <label for="fHours">需要多久</label>
-              <div class="dur">
-                <input id="fHours" type="number" min="0.5" step="0.5" value="3" required />
-                <select id="fUnit" aria-label="時間單位">
-                  <option value="h">小時</option>
-                  <option value="d">天</option>
-                  <option value="w">週</option>
-                </select>
-              </div>
+              <label for="fAt">特定時間</label>
+              <input id="fAt" type="time" />
+            </div>
+          </div>
+          <p class="hint">日期留空＝沒有期限，會排進空檔。填了時間就固定在那個時段，不會被拆開。</p>
+          <div class="field">
+            <label for="fHours">需要多久</label>
+            <div class="dur">
+              <input id="fHours" type="number" min="0" step="0.5" value="3" />
+              <select id="fUnit" aria-label="時間單位">
+                <option value="h">小時</option>
+                <option value="d">天</option>
+                <option value="w">週</option>
+              </select>
             </div>
           </div>
           <p class="conv" id="fConv"></p>
+          <p class="hint">留 0＝只是清單上的一件事，不佔行事曆。</p>
           <div class="row">
             <div class="field">
               <label for="fPrio">優先度</label>
@@ -400,6 +445,13 @@ legend{font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-trans
               <input id="fStart" type="date" />
             </div>
           </div>
+          <details class="adv">
+            <summary>只在特定星期做</summary>
+            <div class="dow-pick" id="fDows"></div>
+            <p class="hint" style="margin:9px 0 0">
+              例如只在六日做的事，就勾六和日。這會蓋過設定裡的工作日；留空＝依全域設定。
+            </p>
+          </details>
           <button class="btn primary" type="submit" style="width:100%">加入並重新排程</button>
         </form>
       </div>
@@ -486,6 +538,9 @@ legend{font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-trans
       </div>
       <div class="row">
         <div class="field"><label for="eDue">截止日</label><input id="eDue" type="date" /></div>
+        <div class="field"><label for="eAt">特定時間</label><input id="eAt" type="time" /></div>
+      </div>
+      <div class="row">
         <div class="field">
           <label for="eHours">預估總量</label>
           <div class="dur">
@@ -513,6 +568,11 @@ legend{font-family:var(--mono); font-size:10px; letter-spacing:.13em; text-trans
         </div>
       </div>
       <div class="field"><label for="eStart">最早可開始</label><input id="eStart" type="date" /></div>
+      <details class="adv">
+        <summary>只在特定星期做</summary>
+        <div class="dow-pick" id="eDows"></div>
+        <p class="hint" style="margin:9px 0 0">留空＝依設定裡的全域工作日。</p>
+      </details>
     </div>
     <div class="dfoot">
       <button class="btn ghost" value="delete" type="submit">刪除任務</button>
@@ -661,70 +721,123 @@ function save(){
   catch(e){ if(storageOK){ storageOK = false; renderAlerts(); } }
 }
 function seed(){
-  const t = today();
+  const t = today(), T = n => fmt(addDays(t,n));
+  const base = { doneHours:0, priority:2, start:fmt(t), done:false, at:"", days:null };
   return [
-    { id:uid(), title:"文獻回顧初稿", deadline:fmt(addDays(t,9)),  hours:10, doneHours:2, priority:3, start:fmt(t), done:false, color:PALETTE[0] },
-    { id:uid(), title:"問卷資料清理",  deadline:fmt(addDays(t,4)),  hours:5,  doneHours:0, priority:2, start:fmt(t), done:false, color:PALETTE[1] },
-    { id:uid(), title:"研討會簡報",    deadline:fmt(addDays(t,16)), hours:6,  doneHours:0, priority:2, start:fmt(t), done:false, color:PALETTE[2] }
+    { ...base, id:uid(), title:"文獻回顧初稿", deadline:T(9),  hours:10, doneHours:2, priority:3, color:PALETTE[0] },
+    { ...base, id:uid(), title:"問卷資料清理",  deadline:T(4),  hours:5,  color:PALETTE[1] },
+    { ...base, id:uid(), title:"與指導教授 meeting", deadline:T(3), at:"14:00", hours:1, color:PALETTE[2] },
+    { ...base, id:uid(), title:"整理田野筆記",  deadline:"",    hours:4, days:[6,0], color:PALETTE[3] },
+    { ...base, id:uid(), title:"訂研討會的會議室", deadline:"", hours:0, color:PALETTE[4] }
   ];
 }
 function uid(){ return Math.random().toString(36).slice(2,10); }
 const remain = t => Math.max(0, r2(t.hours - (t.doneHours||0)));
 
+/* ================= 任務種類 ================= */
+// 沒填時數 = 只是清單上的一件事，不佔行事曆
+const isChecklist = t => !(t.hours > 0);
+// 有日期又有時間 = 固定時段，不拆塊、不受每日上限限制
+const isFixed = t => !!(t.at && t.deadline);
+// 沒有截止日 = 有空再做，撿別人用剩的容量
+const isSomeday = t => !t.deadline;
+// 這件事允許排在星期幾：自訂的蓋過全域設定
+const taskDows = t => (t.days && t.days.length ? t.days : state.settings.workdays);
+
 /* ================= scheduler =================
    每天挑「密度最高」的任務先做：密度 = 剩餘時數 ÷ 到期前還剩幾個工作天。
-   越接近截止、剩越多，密度越高，就越早被排進來。 */
+   越接近截止、剩越多，密度越高，就越早被排進來。
+   固定時段先佔位；無期限的任務排最後，撿剩下的容量。 */
 function schedule(){
   const st = state.settings;
   const t0 = today();
-  const active = state.tasks
-    .filter(t => !t.done && remain(t) > 0.01)
-    .map(t => ({ ref:t, rem: remain(t) }));
 
   plan = {}; diag = {};
-  state.tasks.forEach(t => { diag[t.id] = { finish:null, status: t.done ? "done" : "ok", remaining: remain(t) }; });
-  if(!active.length) return;
-
-  // horizon: 最晚截止日再往後推 120 天，讓排不完的任務也有落點可算
-  let last = t0;
-  active.forEach(a => { const d = parse(a.ref.deadline); if(d > last) last = d; });
-  const end = addDays(last, 120);
-
-  // 預先算出區間內所有工作日，之後查表就好
-  const days = [];
-  for(let d = new Date(t0); d <= end; d = addDays(d,1)){
-    if(st.workdays.includes(d.getDay()) && !st.holidays.includes(fmt(d))) days.push(fmt(d));
-  }
-  if(!days.length) return;
-
-  const lastIdxOnOrBefore = s => { let i = days.length-1; while(i >= 0 && days[i] > s) i--; return i; };
-  const firstIdxOnOrAfter = s => { let i = 0; while(i < days.length && days[i] < s) i++; return i; };
-
-  active.forEach(a => {
-    const soft = fmt(addDays(parse(a.ref.deadline), -st.bufferDays));
-    a.dueIdx  = lastIdxOnOrBefore(soft);
-    a.hardIdx = lastIdxOnOrBefore(a.ref.deadline);
-    a.fromIdx = a.ref.start ? firstIdxOnOrAfter(a.ref.start) : 0;
+  state.tasks.forEach(t => {
+    diag[t.id] = {
+      finish: null,
+      status: t.done ? "done" : (isChecklist(t) ? "list" : "ok"),
+      remaining: remain(t)
+    };
   });
 
-  for(let i = 0; i < days.length; i++){
-    if(!active.some(a => a.rem > 0.01)) break;
-    const key = days[i];
-    let cap = st.dailyCapacity;
+  const active = state.tasks.filter(t => !t.done && !isChecklist(t) && remain(t) > 0.01);
+  if(!active.length) return;
 
-    const pool = active.filter(a => a.rem > 0.01 && a.fromIdx <= i);
+  // 1) 固定時段直接佔位：它就是要在那天那個時間發生，不受工作日與容量限制
+  const fixedUse = {};                       // 各日已被固定時段吃掉的時數
+  active.filter(isFixed).forEach(t => {
+    const key = t.deadline;
+    (plan[key] || (plan[key] = [])).push({ id:t.id, hours:remain(t), at:t.at, fixed:true });
+    fixedUse[key] = r2((fixedUse[key] || 0) + remain(t));
+    const d = diag[t.id];
+    d.finish = key; d.remaining = 0;
+    d.status = (key < fmt(t0)) ? "past" : "fixed";
+  });
+
+  // 2) 彈性任務
+  const flex = active.filter(t => !isFixed(t)).map(t => ({ ref:t, rem: remain(t) }));
+  if(!flex.length){ sortPlan(); return; }
+
+  let last = t0;
+  flex.forEach(a => {
+    if(a.ref.deadline){ const d = parse(a.ref.deadline); if(d > last) last = d; }
+  });
+  const end = addDays(last, 120);
+
+  // 候選日 = 全域工作日 ∪ 任一任務指定的星期（自訂星期要能突破全域設定）
+  const allowed = new Set(st.workdays);
+  flex.forEach(a => taskDows(a.ref).forEach(w => allowed.add(w)));
+
+  const allDays = [];
+  for(let d = new Date(t0); d <= end; d = addDays(d,1)){
+    const k = fmt(d);
+    if(allowed.has(d.getDay()) && !st.holidays.includes(k)) allDays.push({ key:k, w:d.getDay() });
+  }
+  if(!allDays.length){ sortPlan(); return; }
+
+  // 每個任務有自己的可用日清單，密度要按「它自己」還剩幾天來算
+  flex.forEach(a => {
+    const own = taskDows(a.ref);
+    a.days = allDays.filter(x => own.includes(x.w)).map(x => x.key);
+    a.idx  = new Map(a.days.map((k,i) => [k,i]));
+    if(a.ref.deadline){
+      const soft = fmt(addDays(parse(a.ref.deadline), -st.bufferDays));
+      let i = a.days.length - 1; while(i >= 0 && a.days[i] > soft) i--;
+      a.dueIdx = i;
+    }else{
+      a.dueIdx = -1;                          // 無期限
+    }
+    a.from = a.ref.start || fmt(t0);
+  });
+
+  for(const { key } of allDays){
+    if(!flex.some(a => a.rem > 0.01)) break;
+    let cap = r2(st.dailyCapacity - (fixedUse[key] || 0));
+    if(cap <= 0.01) continue;
+
+    const pool = flex.filter(a => a.rem > 0.01 && a.idx.has(key) && key >= a.from);
     pool.forEach(a => {
-      a._left = Math.max(1, a.dueIdx - i + 1);
+      if(isSomeday(a.ref)){ a._den = -1; return; }   // 無期限的排最後
+      a._left = Math.max(1, a.dueIdx - a.idx.get(key) + 1);
       a._den  = a.rem / a._left;
     });
     pool.sort((x,y) => y._den - x._den
-      || (x.ref.deadline < y.ref.deadline ? -1 : x.ref.deadline > y.ref.deadline ? 1 : 0)
+      || cmpStr(x.ref.deadline || "9999-99-99", y.ref.deadline || "9999-99-99")
       || y.ref.priority - x.ref.priority);
 
     for(const a of pool){
       if(cap <= 0.01) break;
-      let want = st.mode === "balanced" ? Math.min(a.rem, upHalf(a._den)) : a.rem;
-      want = Math.min(want, cap, st.maxChunkPerTask);
+      let want, lim;
+      if(a._den < 0){                        // 無期限：撿剩的，每日上限照舊
+        want = a.rem; lim = st.maxChunkPerTask;
+      }else{
+        want = st.mode === "balanced" ? Math.min(a.rem, upHalf(a._den)) : a.rem;
+        // 每日上限是為了不讓一件事吃掉整天，但趕不上截止日時它必須讓路，
+        // 否則會出現「明明還有容量卻告訴你會遲交」。
+        lim = Math.max(st.maxChunkPerTask, upHalf(a._den));
+      }
+      want = Math.min(want, cap, lim);
       want = dnHalf(want);
       if(want < 0.5) want = Math.min(0.5, a.rem, cap);
       if(want <= 0.01) continue;
@@ -735,17 +848,30 @@ function schedule(){
   }
 
   // 診斷：什麼時候做完、來不來得及
-  active.forEach(a => {
+  flex.forEach(a => {
     const d = diag[a.ref.id];
     d.remaining = a.rem;
-    if(a.rem > 0.01){ d.status = "unfit"; return; }
     let fin = null;
     for(const k of Object.keys(plan)) if(plan[k].some(b => b.id === a.ref.id)) if(!fin || k > fin) fin = k;
     d.finish = fin;
+
+    if(isSomeday(a.ref)){ d.status = "someday"; return; }   // 無期限的不會「遲交」
+    if(a.rem > 0.01){ d.status = "unfit"; return; }
     if(!fin) d.status = "ok";
     else if(fin > a.ref.deadline) d.status = "late";
-    else if(a.hardIdx >= 0 && fin > days[Math.max(0,a.dueIdx)]) d.status = "tight";
+    else if(a.dueIdx >= 0 && fin > a.days[a.dueIdx]) d.status = "tight";
     else d.status = "ok";
+  });
+
+  sortPlan();
+}
+
+function cmpStr(a,b){ return a < b ? -1 : a > b ? 1 : 0; }
+
+// 同一天內：固定時段依時間排在前，其餘照原順序
+function sortPlan(){
+  Object.keys(plan).forEach(k => {
+    plan[k].sort((a,b) => (b.fixed?1:0) - (a.fixed?1:0) || cmpStr(a.at || "", b.at || ""));
   });
 }
 
@@ -759,12 +885,16 @@ function dayTotal(key){ return (plan[key]||[]).reduce((s,b) => s+b.hours, 0); }
 function renderAll(){ schedule(); renderReadout(); renderAlerts(); renderToday(); renderTasks(); renderCalendar(); }
 
 function renderReadout(){
-  const st = state.settings;
-  const open = state.tasks.filter(t => !t.done && remain(t) > 0.01);
-  const totalRem = open.reduce((s,t) => s + remain(t), 0);
+  const open = state.tasks.filter(t => !t.done);
+  const work = open.filter(t => !isChecklist(t) && remain(t) > 0.01);
+  const totalRem = work.reduce((s,t) => s + remain(t), 0);
+  // 完工日只看有期限的：無期限的排在空檔，落點會拖很遠，混進來沒有意義
   let finish = null;
-  open.forEach(t => { const f = diag[t.id] && diag[t.id].finish; if(f && (!finish || f > finish)) finish = f; });
-  const risky = open.filter(t => ["late","unfit"].includes(diag[t.id].status)).length;
+  work.filter(t => t.deadline).forEach(t => {
+    const f = diag[t.id] && diag[t.id].finish;
+    if(f && (!finish || f > finish)) finish = f;
+  });
+  const risky = work.filter(t => ["late","unfit","past"].includes(diag[t.id].status)).length;
 
   $("#readout").innerHTML = "";
   const add = (label, val, color) => {
@@ -796,7 +926,10 @@ function renderAlerts(){
   state.tasks.filter(t => !t.done).forEach(t => {
     const d = diag[t.id]; if(!d) return;
     if(d.status === "unfit"){
-      mk("crit", "排不進", `<b>${esc(t.title)}</b> 還有 ${hrs(d.remaining)} 小時無處可放 — 你的工作日容量已經被更急的事情占滿。請延後截止日、降低預估時數，或把每日可投入時數調高。`);
+      const where = t.days && t.days.length ? `你指定只在週${t.days.map(w=>DOW_LABEL[w]).join("、週")}做` : "你的工作日容量已經被更急的事情占滿";
+      mk("crit", "排不進", `<b>${esc(t.title)}</b> 還有 ${hrs(d.remaining)} 小時無處可放 — ${where}。請延後截止日、降低預估時數，或放寬可做的日子。`);
+    }else if(d.status === "past"){
+      mk("warn", "已過時間", `<b>${esc(t.title)}</b> 固定在 ${t.deadline} ${t.at}，時間已經過了還沒標記完成。`);
     }else if(d.status === "late"){
       const over = Math.round((parse(d.finish) - parse(t.deadline)) / 86400000);
       mk("crit", "會遲交", `<b>${esc(t.title)}</b> 依現在的容量要做到 <span class="mono">${d.finish}</span>，比截止日晚 ${over} 天。今天起每天需要 ${hrs(needPerDay(t))} 小時才追得上。`);
@@ -810,10 +943,11 @@ function renderAlerts(){
 }
 
 function needPerDay(t){
-  const st = state.settings;
+  if(!t.deadline) return remain(t);
+  const st = state.settings, dows = taskDows(t);
   let n = 0;
   for(let d = today(); d <= parse(t.deadline); d = addDays(d,1)){
-    if(st.workdays.includes(d.getDay()) && !st.holidays.includes(fmt(d))) n++;
+    if(dows.includes(d.getDay()) && !st.holidays.includes(fmt(d))) n++;
   }
   return n ? remain(t)/n : remain(t);
 }
@@ -844,7 +978,9 @@ function renderToday(){
     const btn = el("button","btn sm","完成 " + hrs(b.hours) + "h");
     btn.title = "把這段時數記為已完成";
     btn.onclick = () => { t.doneHours = r2(Math.min(t.hours, (t.doneHours||0) + b.hours)); if(remain(t) <= 0.01) t.done = true; save(); renderAll(); pushIfLinked(); };
-    row.append(dot, el("span","nm",t.title), el("span","hr",hrs(b.hours)+"h"), btn);
+    row.append(dot);
+    if(b.at){ const a = el("span","hr",b.at); a.style.fontWeight = "700"; a.style.color = t.color; row.append(a); }
+    row.append(el("span","nm",t.title), el("span","hr",hrs(b.hours)+"h"), btn);
     list.append(row);
   });
 }
@@ -856,39 +992,77 @@ function renderTasks(){
 
   if(!state.tasks.length){ box.append(el("div","empty","還沒有任務。從上方新增第一件事。")); return; }
 
-  const order = [...state.tasks].sort((a,b) =>
-    (a.done?1:0)-(b.done?1:0) || (a.deadline < b.deadline ? -1 : a.deadline > b.deadline ? 1 : 0) || b.priority-a.priority);
+  const byDue = (a,b) => cmpStr(a.deadline || "9999", b.deadline || "9999")
+    || cmpStr(a.at || "", b.at || "") || b.priority - a.priority;
 
-  order.forEach(t => {
-    const d = diag[t.id] || {status:"ok"};
-    const row = el("div","task" + (t.done ? " done" : ""));
+  // 有期限的進行事曆，沒期限的是清單 —— 分開看比較清楚
+  const groups = [
+    ["排程中",       open.filter(t => t.deadline).sort(byDue)],
+    ["清單・無期限", open.filter(t => !t.deadline).sort(byDue)],
+    ["已完成",       state.tasks.filter(t => t.done).sort(byDue)]
+  ];
 
-    const top = el("div","top");
-    const dot = el("span","dot"); dot.style.background = t.color;
-    const chip = el("span","chip " + chipClass(d.status), chipText(d.status));
-    const acts = el("div","acts");
-    const ed = el("button","iconbtn","編輯"); ed.onclick = () => openEdit(t.id);
-    const dn = el("button","iconbtn", t.done ? "復原" : "完成");
-    dn.onclick = () => { t.done = !t.done; if(t.done) t.doneHours = t.hours; save(); renderAll(); pushIfLinked(); };
-    acts.append(dn, ed);
-    top.append(dot, el("span","title",t.title), chip, acts);
-
-    const done = t.doneHours || 0;
-    const pct = t.hours ? Math.min(100, done/t.hours*100) : 0;
-    const bar = el("div","pbar"); const fill = el("i"); fill.style.width = pct+"%";
-    if(pct >= 99.5) fill.classList.add("full"); fill.style.background = pct >= 99.5 ? "" : t.color; bar.append(fill);
-
-    const meta = el("div","meta");
-    meta.append(el("span",null,"截止 " + t.deadline.slice(5).replace("-","/")));
-    meta.append(el("span",null, hrs(done) + " / " + hrs(t.hours) + " h"));
-    if(!t.done && d.finish) meta.append(el("span",null,"完工 " + d.finish.slice(5).replace("-","/")));
-
-    row.append(top, bar, meta);
-    box.append(row);
+  groups.forEach(([label, list]) => {
+    if(!list.length) return;
+    const h = el("div","grp"); h.append(el("span",null,label), el("b",null,String(list.length)));
+    box.append(h);
+    list.forEach(t => box.append(taskRow(t)));
   });
 }
-function chipClass(s){ return s==="ok" ? "ok" : s==="tight" ? "warn" : s==="done" ? "idle" : "crit"; }
-function chipText(s){ return {ok:"從容",tight:"緊繃",late:"會遲交",unfit:"排不進",done:"已完成"}[s] || s; }
+
+function taskRow(t){
+  const d = diag[t.id] || {status:"ok"};
+  const row = el("div","task" + (t.done ? " done" : ""));
+
+  const top = el("div","top");
+  const chk = el("input","chk"); chk.type = "checkbox"; chk.checked = !!t.done;
+  chk.setAttribute("aria-label", (t.done ? "取消完成：" : "標記完成：") + t.title);
+  chk.onchange = () => {
+    t.done = chk.checked;
+    if(t.done) t.doneHours = t.hours;
+    else if((t.doneHours || 0) >= t.hours) t.doneHours = 0;
+    save(); renderAll(); pushIfLinked();
+  };
+  const dot = el("span","dot"); dot.style.background = t.color;
+  const chip = el("span","chip " + chipClass(d.status), chipText(d.status));
+  const acts = el("div","acts");
+  const ed = el("button","iconbtn","編輯"); ed.onclick = () => openEdit(t.id);
+  acts.append(ed);
+  top.append(chk, dot, el("span","title",t.title), chip, acts);
+  row.append(top);
+
+  if(!isChecklist(t)){
+    const done = t.doneHours || 0;
+    const pct = t.hours ? Math.min(100, done/t.hours*100) : 0;
+    const bar = el("div","pbar"); const fill = el("i"); fill.style.width = pct + "%";
+    if(pct >= 99.5) fill.classList.add("full");
+    fill.style.background = pct >= 99.5 ? "" : t.color;
+    bar.append(fill); row.append(bar);
+  }
+
+  const meta = el("div","meta");
+  if(t.deadline){
+    meta.append(el("span",null, (isFixed(t) ? "" : "截止 ") + t.deadline.slice(5).replace("-","/")
+      + (t.at ? " " + t.at : "")));
+  }
+  if(!isChecklist(t)) meta.append(el("span",null, hrs(t.doneHours || 0) + " / " + hrs(t.hours) + " h"));
+  if(t.days && t.days.length) meta.append(el("span",null, "只在 " + t.days.map(w => DOW_LABEL[w]).join("")));
+  if(!t.done && !isFixed(t) && d.finish) meta.append(el("span",null,"完工 " + d.finish.slice(5).replace("-","/")));
+  if(meta.childNodes.length) row.append(meta);
+
+  return row;
+}
+
+function chipClass(s){
+  if(s === "ok") return "ok";
+  if(s === "tight") return "warn";
+  if(s === "done" || s === "list" || s === "someday" || s === "fixed") return "idle";
+  return "crit";
+}
+function chipText(s){
+  return { ok:"從容", tight:"緊繃", late:"會遲交", unfit:"排不進",
+           done:"已完成", list:"清單", someday:"無期限", fixed:"固定", past:"已過" }[s] || s;
+}
 
 function renderCalendar(){
   const grid = $("#grid"), st = state.settings;
@@ -944,8 +1118,8 @@ function renderCalendar(){
     if(total > 0) num.append(el("span","tot", hrs(total)+"h"));
     c.append(num);
 
-    // 截止日旗標
-    state.tasks.filter(t => !t.done && t.deadline === key).forEach(t => {
+    // 截止日旗標（固定時段已經以區塊呈現，不再重複標一次）
+    state.tasks.filter(t => !t.done && t.deadline === key && !isFixed(t)).forEach(t => {
       const f = el("div","due"); f.title = "截止：" + t.title;
       f.append(el("span",null,"截止"), el("span",null,t.title));
       c.append(f);
@@ -953,8 +1127,9 @@ function renderCalendar(){
 
     blocks.forEach(b => {
       const t = taskById(b.id); if(!t) return;
-      const n = el("div","blk"); n.style.setProperty("--bc", t.color);
-      n.title = `${t.title} — ${hrs(b.hours)} 小時`;
+      const n = el("div","blk" + (b.at ? " fixed" : "")); n.style.setProperty("--bc", t.color);
+      n.title = (b.at ? b.at + "　" : "") + `${t.title} — ${hrs(b.hours)} 小時`;
+      if(b.at) n.append(el("span","bt", b.at));
       n.append(el("span","bn",t.title), el("span","bh",hrs(b.hours)+"h"));
       c.append(n);
     });
@@ -979,15 +1154,35 @@ function syncAddUnit(){
 $("#fUnit").addEventListener("change", syncAddUnit);
 $("#fHours").addEventListener("input", syncAddUnit);
 
+// 星期挑選器，新增表單與編輯視窗共用
+function buildDowPick(box, getSel, setSel){
+  box.innerHTML = "";
+  [1,2,3,4,5,6,0].forEach(w => {
+    const lab = el("label");
+    const cb = el("input"); cb.type = "checkbox"; cb.checked = getSel().includes(w);
+    cb.onchange = () => {
+      const s = getSel();
+      setSel(cb.checked ? [...new Set([...s,w])].sort() : s.filter(x => x !== w));
+    };
+    lab.append(cb, document.createTextNode(DOW_LABEL[w]));
+    box.append(lab);
+  });
+}
+
+let fDays = [];
+buildDowPick($("#fDows"), () => fDays, s => { fDays = s; });
+
 $("#addForm").addEventListener("submit", e => {
   e.preventDefault();
   const title = $("#fTitle").value.trim();
-  const deadline = $("#fDue").value;
+  const deadline = $("#fDue").value;          // 留空 = 無期限
   const unit = $("#fUnit").value;
-  const hours = toHours(parseFloat($("#fHours").value), unit);
-  if(!title || !deadline || !(hours > 0)) return;
+  const hours = toHours(parseFloat($("#fHours").value) || 0, unit);   // 0 = 純清單項目
+  if(!title) return;
   state.tasks.push({
     id: uid(), title, deadline, hours, unit,
+    at: deadline ? $("#fAt").value : "",       // 沒有日期就談不上固定時段
+    days: fDays.length ? [...fDays] : null,
     doneHours: 0,
     priority: parseInt($("#fPrio").value,10),
     start: $("#fStart").value || fmt(today()),
@@ -997,8 +1192,9 @@ $("#addForm").addEventListener("submit", e => {
   save(); renderAll(); pushIfLinked();
   e.target.reset();
   $("#fHours").value = 3; $("#fUnit").value = "h"; $("#fPrio").value = "2";
-  $("#fDue").value = fmt(addDays(today(),7));
+  $("#fDue").value = ""; $("#fAt").value = "";
   $("#fStart").value = fmt(today());
+  fDays = []; buildDowPick($("#fDows"), () => fDays, s => { fDays = s; });
   syncAddUnit();
   $("#fTitle").focus();
 });
@@ -1038,11 +1234,15 @@ $("#eUnit").addEventListener("change", () => {
 });
 $("#eHours").addEventListener("input", syncEditUnit);
 
+let eDays = [];
 function openEdit(id){
   const t = taskById(id); if(!t) return;
   editing = id;
   editUnit = t.unit || "h";
-  $("#eTitle").value = t.title; $("#eDue").value = t.deadline;
+  eDays = t.days ? [...t.days] : [];
+  buildDowPick($("#eDows"), () => eDays, s => { eDays = s; });
+  $("#eTitle").value = t.title; $("#eDue").value = t.deadline || "";
+  $("#eAt").value = t.at || "";
   $("#eUnit").value = editUnit;
   $("#eHours").value = fromHours(t.hours, editUnit);
   $("#eDone").value = fromHours(t.doneHours || 0, editUnit);
@@ -1054,14 +1254,16 @@ $("#dlgEdit").addEventListener("close", () => {
   const v = $("#dlgEdit").returnValue, t = taskById(editing);
   if(t && v === "save"){
     t.title = $("#eTitle").value.trim() || t.title;
-    t.deadline = $("#eDue").value || t.deadline;
+    t.deadline = $("#eDue").value;                    // 可以清空，變成無期限
+    t.at = t.deadline ? $("#eAt").value : "";
+    t.days = eDays.length ? [...eDays] : null;
     const u = $("#eUnit").value;
     t.unit = u;
-    t.hours = Math.max(0.5, toHours(parseFloat($("#eHours").value), u) || t.hours);
+    t.hours = Math.max(0, toHours(parseFloat($("#eHours").value) || 0, u));
     t.doneHours = Math.min(t.hours, Math.max(0, toHours(parseFloat($("#eDone").value) || 0, u)));
     t.priority = parseInt($("#ePrio").value,10);
     t.start = $("#eStart").value || t.start;
-    t.done = remain(t) <= 0.01;
+    t.done = t.hours > 0 ? remain(t) <= 0.01 : t.done;
   }else if(t && v === "delete"){
     state.tasks = state.tasks.filter(x => x.id !== editing);
   }
@@ -1137,6 +1339,11 @@ $("#xIcs").onclick = () => {
     plan[key].forEach((b,i) => {
       const t = taskById(b.id); if(!t) return;
       const [y,m,d] = key.split("-");
+      // 固定時段用它自己的時間，不跟著往後堆疊
+      if(b.at){
+        const [hh,mm] = b.at.split(":").map(Number);
+        cur = hh*60 + mm;
+      }
       const s = `${y}${m}${d}T${hhmm(cur)}`;
       cur += b.hours * 60;
       const e = `${y}${m}${d}T${hhmm(cur)}`;
@@ -1249,7 +1456,6 @@ function setupSync(){
 }
 
 /* ================= boot ================= */
-$("#fDue").value = fmt(addDays(today(),7));
 $("#fStart").value = fmt(today());
 syncAddUnit();
 setupSync();
