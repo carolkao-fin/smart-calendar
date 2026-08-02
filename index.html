@@ -324,12 +324,36 @@ button{cursor:pointer}
   font-family:var(--mono); font-size:10px; font-weight:700; flex:none;
   color:var(--bc); font-variant-numeric:tabular-nums;
 }
+/* 過去卻沒發生的固定時段：虛線＋警示色，一眼看得出那天欠了什麼 */
+.blk.miss{
+  background:transparent; color:var(--ink-2);
+  border:1px dashed color-mix(in oklab, var(--crit) 55%, var(--line));
+  border-left:3px solid var(--crit); padding-left:5px;
+}
+/* 過去的日子放「實際發生過的事」：完成紀錄不會被重排洗掉，所以留得住 */
+.dblk{
+  display:flex; align-items:center; gap:5px; padding:2px 5px;
+  border-radius:3px; font-size:11.5px; line-height:1.35;
+  background:color-mix(in oklab, var(--bc,var(--ok)) 13%, var(--surface));
+  color:var(--ink-2); overflow:hidden;
+}
+.dblk .dk{flex:none; font-size:10px; font-weight:700; color:var(--bc,var(--ok))}
+.dblk .bn{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.dblk .bh{font-family:var(--mono); font-size:10px; color:var(--ink-3); font-variant-numeric:tabular-nums; flex:none}
+/* 過去那幾天畫的是實績不是計畫，用完成色和未來的排程區隔開 */
+.cell.past.loaded{background:color-mix(in oklab, var(--ok) calc(var(--load) * 9%), var(--surface))}
+.cell.past .dnum .tot,
+.cell.past.over .dnum .tot{color:var(--ok); font-weight:600}
+.cell.past .meter i,
+.cell.past.over .meter i{background:color-mix(in oklab, var(--ok) 70%, transparent)}
+
 .due{
   display:flex; align-items:center; gap:4px; font-size:10.5px; font-weight:600;
   color:var(--crit); padding:1px 4px; border-radius:3px;
   background:color-mix(in oklab, var(--crit) 11%, transparent);
   overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
 }
+.due.late{background:color-mix(in oklab, var(--crit) 20%, transparent); font-weight:700}
 .meter{
   position:absolute; left:0; right:0; bottom:0; height:4px; background:transparent;
 }
@@ -345,7 +369,14 @@ button{cursor:pointer}
 .rep .rn{overflow:hidden; text-overflow:ellipsis}
 .rep .ri{flex:none; color:var(--rc,var(--ink-3))}
 
-/* ---------- 完成紀錄 ---------- */
+/* ---------- 紀錄頁 ---------- */
+.seg .badge{
+  display:inline-block; margin-left:5px; padding:0 5px; border-radius:8px;
+  background:var(--crit); color:#fff; font-family:var(--mono); font-size:10px; font-weight:700;
+  line-height:15px; vertical-align:1px;
+}
+.seg button[aria-pressed="true"] .badge{background:var(--on-accent); color:var(--accent)}
+
 .logsum{display:flex; gap:0; border-bottom:1px solid var(--line)}
 .logsum div{padding:10px 14px; border-right:1px solid var(--line); flex:1}
 .logsum div:last-child{border-right:0}
@@ -358,7 +389,16 @@ button{cursor:pointer}
   font-family:var(--mono); font-size:10px; letter-spacing:.1em; color:var(--ink-3);
 }
 .logday.is-today{color:var(--accent); font-weight:700}
+.logday.late{color:var(--crit); font-weight:700; background:color-mix(in oklab, var(--crit) 8%, var(--surface-2))}
+.logday.late b{color:var(--crit)}
 .logday b{margin-left:auto; color:var(--ink-2); font-weight:600; letter-spacing:0}
+/* 未完成清單：欠著的事排在紀錄頁最上面，補完成或刪掉都在這裡做完 */
+.logrow.late .btn{flex:none}
+.logrow.late .hr{flex:none}
+.lategap{
+  margin:0; padding:8px 14px 10px; border-top:1px solid var(--line);
+  font-size:11px; line-height:1.6; color:var(--ink-3);
+}
 .logrow{
   display:flex; align-items:center; gap:9px; padding:9px 14px; border-top:1px solid var(--line);
 }
@@ -520,12 +560,20 @@ dialog .dfoot{padding:12px 16px; border-top:1px solid var(--line); display:flex;
       <div class="seg">
         <button id="viewMonth" aria-pressed="true">月</button>
         <button id="viewWeek" aria-pressed="false">工作週</button>
-        <button id="viewLog" aria-pressed="false">完成紀錄</button>
+        <button id="viewLog" aria-pressed="false">紀錄<span class="badge" id="lateBadge" hidden></span></button>
       </div>
     </div>
     <div class="calwrap" id="calWrap"><div class="grid" id="grid"></div></div>
     <div id="logWrap" hidden>
       <div class="logsum" id="logSum"></div>
+      <div id="lateWrap" hidden>
+        <div class="logday late">
+          <span>未完成 — 截止日已經過了</span><b id="lateCount"></b>
+        </div>
+        <div id="lateList"></div>
+        <p class="lategap">「補完成」會把紀錄記在原本的截止日那一天，行事曆上那天就看得到；
+          真的不做了就直接刪掉。刪任務不會動到已經留下的完成紀錄。</p>
+      </div>
       <div id="logList"></div>
     </div>
   </section>
@@ -710,7 +758,9 @@ const REPEAT_LABEL = {
   "":"", daily:"每天", weekday:"每個工作日", weekly:"每週",
   biweekly:"每兩週", monthly:"每月", yearly:"每年"
 };
-const LOG_MAX = 600;          // 紀錄只留最近這麼多筆，免得 localStorage 無限長大
+// 紀錄同時是行事曆上「過去那幾天做了什麼」的唯一來源，丟掉就等於抹掉歷史，
+// 所以留得比單純的流水帳多；上限仍在，免得 localStorage 無限長大。
+const LOG_MAX = 2000;
 const MIN_SLICE = 0.5;        // 排程的最小刻度，收尾的零頭才會用到
 const DEFAULTS = {
   dailyCapacity: 4,
@@ -947,15 +997,19 @@ function logProgress(t, hours){
   pushLog({ kind:"progress", taskId:t.id, title:t.title, date:fmt(today()), hours:add, before });
   if(remain(t) <= 0.01) markDone(t);
 }
-// 完成：一般任務就此結案；有頻率的滾到下一次，時數歸零重新開始
-function markDone(t){
+// 完成：一般任務就此結案；有頻率的滾到下一次，時數歸零重新開始。
+// `when` 是補記用的日期：事情其實那天就做完了，只是忘了勾 —— 紀錄要落在那一天，
+// 行事曆上的那一格才留得住這件事。
+function markDone(t, when){
   const before = snap(t);
-  const stamp = fmt(today());
+  const now = fmt(today());
+  const stamp = when || now;
   const left = isChecklist(t) ? 0 : remain(t);
   let next = "";
   if(isRepeat(t)){
     const anchor = t.deadline || t.start || stamp;
-    next = nextOccurAfter(anchor, t.repeat, stamp);
+    // 補記的是過去，但下一次仍要落在未來，否則補完一次還是逾期
+    next = nextOccurAfter(anchor, t.repeat, now > stamp ? now : stamp);
     if(next){
       if(t.deadline){
         // 起算日跟著往後移同樣的天數，維持原本「提前幾天可以開始」的距離
@@ -985,6 +1039,19 @@ function undoLog(entryId){
   }
   state.log.splice(i,1);
   save(); renderAll();
+}
+// 刪除任務不會動到已經留下的完成紀錄 —— 那幾天真的發生過，行事曆上要留著。
+// 紀錄列會變成「已刪除」的樣子，想清掉再自己按一次。
+function removeTask(id){
+  state.tasks = state.tasks.filter(x => x.id !== id);
+  save(); renderAll();
+}
+// 未完成：截止日已經過了卻還沒結案的事，純清單項目也算。最久沒處理的排最前面。
+function overdue(){
+  const key = fmt(today());
+  return state.tasks
+    .filter(t => !t.done && t.deadline && t.deadline < key)
+    .sort((a,b) => cmpStr(a.deadline, b.deadline) || cmpStr(a.at || "", b.at || ""));
 }
 // 直接取消勾選：優先用最後一筆完成紀錄還原，沒有紀錄（舊資料）才退回歸零
 function undoDone(t){
@@ -1141,7 +1208,14 @@ const taskById = id => state.tasks.find(t => t.id === id);
 
 function dayTotal(key){ return (plan[key]||[]).reduce((s,b) => s+b.hours, 0); }
 
-function renderAll(){ schedule(); renderReadout(); renderAlerts(); renderToday(); renderTasks(); renderCalendar(); }
+function renderAll(){ schedule(); renderReadout(); renderAlerts(); renderToday(); renderTasks(); renderCalendar(); renderBadge(); }
+
+// 未完成的件數掛在「紀錄」鍵上：欠著的事不該要切換檢視才看得到
+function renderBadge(){
+  const n = overdue().length, b = $("#lateBadge");
+  b.hidden = !n;
+  b.textContent = n ? String(n) : "";
+}
 
 function renderReadout(){
   const open = state.tasks.filter(t => !t.done);
@@ -1366,7 +1440,7 @@ function renderCalendar(){
   $("#calWrap").hidden = isLog;
   $("#logWrap").hidden = !isLog;
   ["prevBtn","nextBtn","todayBtn"].forEach(id => { $("#"+id).hidden = isLog; });
-  if(isLog){ $("#periodLabel").textContent = "完成紀錄"; renderLog(); return; }
+  if(isLog){ $("#periodLabel").textContent = "紀錄"; renderLog(); return; }
 
   grid.innerHTML = "";
   grid.classList.toggle("week5", view === "week");
@@ -1412,19 +1486,29 @@ function renderCalendar(){
     });
   }
 
+  // 過去的日子放「實際發生過的事」：排程每次都從今天重算，過去那幾格因此永遠是空的。
+  // 完成紀錄是唯一不會被重排洗掉的東西，所以歷史從它來（見開發紀錄挑戰 18）。
+  const hist = {};
+  state.log.forEach(e => { (hist[e.date] || (hist[e.date] = [])).push(e); });
+
   cells.forEach(({d,pad:isPad}) => {
     const key = fmt(d);
     const isWork = st.workdays.includes(d.getDay()) && !st.holidays.includes(key);
+    const past = key < fmt(t0);
     const blocks = plan[key] || [];
-    const total = dayTotal(key);
+    const did = hist[key] || [];
+    // 過去看實際做掉的時數，今天以後看計畫
+    const total = past ? r2(did.reduce((s,e) => s + (e.hours || 0), 0)) : dayTotal(key);
     const cap = st.dailyCapacity || 1;
     const ratio = total / cap;
 
     const c = el("div","cell");
+    c.dataset.d = key;
     if(isPad) c.classList.add("pad");
     else if(!isWork) c.classList.add("off");
     else if(total > 0) c.classList.add("loaded");
     if(total > cap + 0.01) c.classList.add("over");
+    if(past) c.classList.add("past");
     if(key === fmt(t0)) c.classList.add("today");
     c.style.setProperty("--load", Math.min(1, ratio).toFixed(2));
 
@@ -1434,19 +1518,36 @@ function renderCalendar(){
     if(total > 0) num.append(el("span","tot", hrs(total)+"h"));
     c.append(num);
 
-    // 截止日旗標（固定時段已經以區塊呈現，不再重複標一次）
+    // 截止日旗標（固定時段已經以區塊呈現，不再重複標一次）。
+    // 已經過去卻還沒結案的，標成「逾期」留在原本那一天，不會憑空消失。
     state.tasks.filter(t => !t.done && t.deadline === key && !isFixed(t)).forEach(t => {
-      const f = el("div","due"); f.title = "截止：" + t.title;
-      f.append(el("span",null,"截止"), el("span",null,t.title));
+      const f = el("div","due" + (past ? " late" : ""));
+      f.title = (past ? "逾期未完成：" : "截止：") + t.title;
+      f.append(el("span",null, past ? "逾期" : "截止"), el("span",null,t.title));
       c.append(f);
     });
 
     blocks.forEach(b => {
       const t = taskById(b.id); if(!t) return;
-      const n = el("div","blk" + (b.at ? " fixed" : "")); n.style.setProperty("--bc", t.color);
-      n.title = (b.at ? b.at + "　" : "") + `${t.title} — ${hrs(b.hours)} 小時`;
+      // 過去還留在 plan 裡的只有沒結案的固定時段 —— 那是欠著的事，畫成虛線
+      const n = el("div","blk" + (b.at ? " fixed" : "") + (past ? " miss" : ""));
+      n.style.setProperty("--bc", t.color);
+      n.title = (b.at ? b.at + "　" : "") + `${t.title} — ${hrs(b.hours)} 小時`
+        + (past ? "（時間已過，還沒標記完成）" : "");
       if(b.at) n.append(el("span","bt", b.at));
       n.append(el("span","bn",t.title), el("span","bh",hrs(b.hours)+"h"));
+      c.append(n);
+    });
+
+    // 那天實際做掉的事：任務被刪掉也還在，因為它真的發生過
+    did.forEach(e => {
+      const t = taskById(e.taskId);
+      const n = el("div","dblk");
+      n.style.setProperty("--bc", t ? t.color : "var(--ink-3)");
+      n.title = `${e.title} — ${e.kind === "done" ? "完成" : "打卡"}`
+        + (e.hours > 0 ? ` ${hrs(e.hours)} 小時` : "");
+      n.append(el("span","dk", e.kind === "done" ? "✓" : "·"), el("span","bn", e.title));
+      if(e.hours > 0) n.append(el("span","bh", hrs(e.hours) + "h"));
       c.append(n);
     });
 
@@ -1465,7 +1566,9 @@ function renderCalendar(){
   });
 }
 
-/* ================= 完成紀錄頁 ================= */
+/* ================= 紀錄頁 =================
+   上半是「還欠著的」，下半是「已經做完的」。兩件事放同一頁，
+   因為它們都是在回頭看過去：補完成的那一筆會直接落到下半部對應的日期。 */
 function renderLog(){
   const sum = $("#logSum"), list = $("#logList");
   sum.innerHTML = ""; list.innerHTML = "";
@@ -1474,16 +1577,25 @@ function renderLog(){
   // 本週從週一算起
   const weekStart = fmt(addDays(t0, -((t0.getDay()+6) % 7)));
   const hoursOf = f => state.log.filter(f).reduce((s,e) => s + (e.hours || 0), 0);
+  const late = overdue();
 
-  const card = (label, val) => {
+  const card = (label, val, color) => {
     const d = el("div");
-    d.append(el("b", null, val), el("span", null, label));
+    const b = el("b", null, val); if(color) b.style.color = color;
+    d.append(b, el("span", null, label));
     sum.append(d);
   };
+  card("未完成", String(late.length) + " 件", late.length ? "var(--crit)" : "");
   card("今日完成", hrs(hoursOf(e => e.date === key)) + "h");
   card("本週完成", hrs(hoursOf(e => e.date >= weekStart)) + "h");
   card("今日結案", String(state.log.filter(e => e.date === key && e.kind === "done").length) + " 件");
   card("累計結案", String(state.log.filter(e => e.kind === "done").length) + " 件");
+
+  const lateBox = $("#lateList");
+  lateBox.innerHTML = "";
+  $("#lateWrap").hidden = !late.length;
+  $("#lateCount").textContent = late.length + " 件";
+  late.forEach(t => lateBox.append(lateRow(t)));
 
   if(!state.log.length){
     list.append(el("div","empty","還沒有完成紀錄。在左邊的今日面板打卡，或勾選任務完成，這裡就會留下紀錄。"));
@@ -1504,6 +1616,33 @@ function renderLog(){
     list.append(h);
     g.items.forEach(e => list.append(logRow(e)));
   });
+}
+
+// 未完成的一列：補完成（記在原本那天）、改期、或直接刪掉，三條路都在同一列上
+function lateRow(t){
+  const row = el("div","logrow late");
+  const dot = el("span","dot"); dot.style.background = t.color;
+  const days = Math.round((today() - parse(t.deadline)) / 86400000);
+  row.append(dot, el("span","nm", t.title),
+             el("span","chip crit", `逾期 ${days} 天`));
+  if(!isChecklist(t)) row.append(el("span","hr", hrs(remain(t)) + "h"));
+
+  const fin = el("button","btn sm","補完成");
+  fin.title = `記成 ${t.deadline} 完成，行事曆上那天就看得到`;
+  fin.onclick = () => { markDone(t, t.deadline); save(); renderAll(); };
+
+  const ed = el("button","btn sm ghost","編輯");
+  ed.title = "改期或調整時數";
+  ed.onclick = () => openEdit(t.id);
+
+  const del = el("button","btn sm ghost","刪除");
+  del.title = "從清單移除，已經留下的完成紀錄不受影響";
+  del.onclick = () => {
+    if(confirm(`刪除「${t.title}」？\n這件事會從任務清單與行事曆消失，已經留下的完成紀錄不受影響。`))
+      removeTask(t.id);
+  };
+  row.append(fin, ed, del);
+  return row;
 }
 
 function logRow(e){

@@ -56,8 +56,21 @@ PROBE = r"""
     return $$('#grid .cell').map(function(c,i){
       var tot = c.querySelector('.dnum .tot');
       return {
+        date: c.dataset.d || null,
         col: i % 7,                                   // 月檢視 7 欄，第 0 欄是週日
         total: tot ? parseFloat(tot.textContent) : 0,
+        past: c.classList.contains('past'),
+        overdue: [].slice.call(c.querySelectorAll('.due.late span:last-child'))
+                   .map(function(s){ return s.textContent; }),
+        // 過去那幾天實際做掉的事（來自完成紀錄，不是排程）
+        dones: [].slice.call(c.querySelectorAll('.dblk')).map(function(b){
+          var h = b.querySelector('.bh');
+          return {
+            name: b.querySelector('.bn').textContent,
+            mark: b.querySelector('.dk').textContent,
+            hours: h ? parseFloat(h.textContent) : 0
+          };
+        }),
         repeats: [].slice.call(c.querySelectorAll('.rep .rn'))
                    .map(function(r){ return r.textContent; }),
         blocks: [].slice.call(c.querySelectorAll('.blk')).map(function(b){
@@ -65,11 +78,27 @@ PROBE = r"""
             name: b.querySelector('.bn').textContent,
             hours: parseFloat(b.querySelector('.bh').textContent),
             fixed: b.classList.contains('fixed'),
+            miss: b.classList.contains('miss'),
             at: b.querySelector('.bt') ? b.querySelector('.bt').textContent : null
           };
         })
       };
     });
+  }
+  function dayKey(off){
+    var d = new Date(); d.setDate(d.getDate() + off);
+    return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);
+  }
+  function addTask(title, dueOffset, hours){
+    $('#fTitle').value = title;
+    $('#fDue').value = dayKey(dueOffset);
+    $('#fHours').value = String(hours);
+    $('#fStart').value = dayKey(dueOffset - 2);
+    $('#addForm').dispatchEvent(new Event('submit', { cancelable:true, bubbles:true }));
+  }
+  function lateRowOf(title){
+    return $$('#lateList .logrow').filter(function(r){
+      return r.querySelector('.nm').textContent === title; })[0];
   }
   function readTasks(){
     return $$('#taskList .task').map(function(t){
@@ -93,6 +122,16 @@ PROBE = r"""
       logVisible: !$('#logWrap').hidden && $('#calWrap').hidden,
       sum: $$('#logSum div').map(function(d){
         return d.querySelector('span').textContent + '=' + d.querySelector('b').textContent; }),
+      lateVisible: !$('#lateWrap').hidden,
+      late: $$('#lateList .logrow').map(function(r){
+        var h = r.querySelector('.hr');
+        return {
+          name: r.querySelector('.nm').textContent,
+          chip: r.querySelector('.chip').textContent,
+          hours: h ? parseFloat(h.textContent) : 0,
+          btns: [].slice.call(r.querySelectorAll('.btn')).map(function(b){ return b.textContent; })
+        };
+      }),
       days: $$('#logList .logday').map(function(d){ return d.textContent; }),
       rows: $$('#logList .logrow').map(function(r){
         var h = r.querySelector('.hr');
@@ -229,6 +268,38 @@ PROBE = r"""
     }else{
       out.sync = captured;
     }
+
+    // --- 未完成清單與行事曆上的過去 ---
+    // seed 全是未來的事，所以自己補一件已經過期的進去
+    window.confirm = function(){ return true; };
+    out.lateDue = dayKey(-3);
+    addTask('上週的報告', -3, 2);
+    click($('#viewMonth'));
+    out.lateBadge = $('#lateBadge').hidden ? null : $('#lateBadge').textContent;
+    out.cellsLate = readCells();
+    click($('#viewLog'));
+    out.lateView = readLog();
+
+    // 補完成：紀錄要落在原本的截止日那天，行事曆上那一格就看得到
+    lateRowOf('上週的報告').querySelector('.btn').click();
+    out.afterFill = readLog();
+    out.badgeAfterFill = $('#lateBadge').hidden;
+    click($('#viewMonth'));
+    out.cellsAfterFill = readCells();
+
+    // 補錯了也要能收回：那筆紀錄一恢復，事情就回到未完成清單
+    click($('#viewLog'));
+    var back = $$('#logList .logrow').filter(function(r){
+      return r.querySelector('.nm').textContent === '上週的報告'; })[0];
+    if(back) back.querySelector('.undo').click();
+    out.afterFillUndo = readLog();
+
+    // 刪除：從未完成清單直接把它清掉
+    var delRow = lateRowOf('上週的報告');
+    var btns = delRow ? [].slice.call(delRow.querySelectorAll('.btn')) : [];
+    btns.filter(function(b){ return b.textContent === '刪除'; })[0].click();
+    out.afterDelete = readLog();
+    out.tasksAfterDelete = readTasks().map(function(t){ return t.title; });
   }catch(e){ out.errors.push(String(e) + ' @ ' + (e.stack || '').split('\n')[1]); }
   document.title = 'PROBE' + JSON.stringify(out) + 'ENDPROBE';
 })();
@@ -382,8 +453,10 @@ def main():
     print('  分日：', d['afterDoneLog']['days'])
     for r in d['afterDoneLog']['rows']:
         print('    %-16s %-14s %sh  [%s]' % (r['name'], r['kind'], r['hours'], r['btn']))
-    check('統計有四項（今日／本週／今日結案／累計）', len(d['afterDoneLog']['sum']) == 4,
+    check('統計有五項（未完成／今日／本週／今日結案／累計）', len(d['afterDoneLog']['sum']) == 5,
           d['afterDoneLog']['sum'])
+    check('統計第一項是未完成', d['afterDoneLog']['sum'][0].startswith('未完成='),
+          d['afterDoneLog']['sum'][0])
     check('紀錄依日期分段且標出今天',
           any('今天' in x for x in d['afterDoneLog']['days']), d['afterDoneLog']['days'])
     check('完成任務會產生一筆紀錄',
@@ -457,6 +530,65 @@ def main():
               s['taskKeys'])
         check('設定一併上傳（每日可投入時數等）',
               'dailyCapacity' in s['settingsKeys'], s['settingsKeys'])
+
+    print('\n=== 未完成清單與行事曆上的過去 ===')
+    due = d.get('lateDue')
+    lv = d.get('lateView') or {}
+    late = [r for r in lv.get('late', []) if r['name'] == '上週的報告']
+    print('  逾期的那件事：', late)
+    check('過期的事會進未完成清單', lv.get('lateVisible') and late, lv.get('late'))
+    check('未完成那一列標出逾期幾天', late and late[0]['chip'] == '逾期 3 天',
+          late[0]['chip'] if late else None)
+    check('未完成那一列有補完成／編輯／刪除',
+          late and late[0]['btns'] == ['補完成', '編輯', '刪除'],
+          late[0]['btns'] if late else None)
+    check('未完成件數算進統計',
+          any(s.startswith('未完成=') and s != '未完成=0 件' for s in lv.get('sum', [])),
+          lv.get('sum'))
+    check('「紀錄」鍵掛上未完成件數的標記', d.get('lateBadge') == '1', d.get('lateBadge'))
+
+    cell_late = [c for c in d.get('cellsLate', []) if c['date'] == due]
+    check('行事曆把過去那一格標成逾期',
+          cell_late and '上週的報告' in cell_late[0]['overdue'],
+          cell_late[0] if cell_late else '（那一天不在目前的月檢視裡）')
+    check('過去的格子有標成 past', cell_late and cell_late[0]['past'],
+          cell_late[0]['past'] if cell_late else None)
+
+    af = d.get('afterFill') or {}
+    filled = [x for x in af.get('days', []) if due in x]
+    print('  補完成後的紀錄分日：', af.get('days'))
+    check('補完成的紀錄落在原本的截止日那天', bool(filled), af.get('days'))
+    check('補完成後那件事離開未完成清單',
+          not [r for r in af.get('late', []) if r['name'] == '上週的報告'], af.get('late'))
+    check('補完成後「紀錄」鍵的標記消失', d.get('badgeAfterFill') is True, d.get('badgeAfterFill'))
+
+    cell_fill = [c for c in d.get('cellsAfterFill', []) if c['date'] == due]
+    print('  那一天的行事曆格子：', cell_fill[0] if cell_fill else None)
+    check('行事曆上過去那一天留下完成紀錄',
+          cell_fill and any(x['name'] == '上週的報告' for x in cell_fill[0]['dones']),
+          cell_fill[0]['dones'] if cell_fill else None)
+    check('完成紀錄帶勾號與時數',
+          cell_fill and cell_fill[0]['dones'] and cell_fill[0]['dones'][0]['mark'] == '✓'
+          and cell_fill[0]['dones'][0]['hours'] == 2.0,
+          cell_fill[0]['dones'] if cell_fill else None)
+    check('那一天的合計換成實際做掉的時數',
+          cell_fill and cell_fill[0]['total'] == 2.0,
+          cell_fill[0]['total'] if cell_fill else None)
+    check('逾期標記在補完成後消失',
+          cell_fill and '上週的報告' not in cell_fill[0]['overdue'],
+          cell_fill[0]['overdue'] if cell_fill else None)
+
+    fu = d.get('afterFillUndo') or {}
+    check('補錯了恢復回來，事情回到未完成清單',
+          any(r['name'] == '上週的報告' for r in fu.get('late', [])), fu.get('late'))
+    check('恢復後那筆紀錄也不見了',
+          not [x for x in fu.get('days', []) if due in x], fu.get('days'))
+
+    ad = d.get('afterDelete') or {}
+    check('可以直接從未完成清單刪掉',
+          not [r for r in ad.get('late', []) if r['name'] == '上週的報告'], ad.get('late'))
+    check('刪掉之後任務清單也沒有它',
+          '上週的報告' not in (d.get('tasksAfterDelete') or []), d.get('tasksAfterDelete'))
 
     print('\n=== 摘要列 ===')
     print('  ', d['readout'])
